@@ -6,6 +6,7 @@ const path = require('path');
 const notifier = require('../services/notifier');
 const WeChatService = require('../core/wechat');
 const CryptoService = require('../core/crypto');
+const auth = require('../core/auth');
 
 const router = express.Router();
 
@@ -14,13 +15,26 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-for-developmen
 const wechat = new WeChatService();
 const crypto = new CryptoService(ENCRYPTION_KEY);
 
+// 认证中间件
+const requireAuth = (req, res, next) => {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    if (!auth.verifyToken(token)) {
+        return res.status(401).json({ error: '未登录或登录已过期' });
+    }
+    next();
+};
+
 // 1. GET / 返回前端页面
 router.get('/', (req, res) => {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    if (!auth.verifyToken(token)) {
+        return res.redirect('/login');
+    }
     res.sendFile(path.join(__dirname, '../../public/index.html'));
 });
 
 // 2. POST /api/validate 验证凭证并获取成员列表
-router.post('/api/validate', async (req, res) => {
+router.post('/api/validate', requireAuth, async (req, res) => {
     const { corpid, corpsecret } = req.body;
     if (!corpid || !corpsecret) {
         return res.status(400).json({ error: '参数不完整' });
@@ -35,7 +49,7 @@ router.post('/api/validate', async (req, res) => {
 });
 
 // 2.1 POST /api/generate-callback 生成回调URL
-router.post('/api/generate-callback', async (req, res) => {
+router.post('/api/generate-callback', requireAuth, async (req, res) => {
     const { corpid, callback_token, encoding_aes_key } = req.body;
     if (!corpid || !callback_token || !encoding_aes_key) {
         return res.status(400).json({ error: '回调配置参数不完整' });
@@ -57,7 +71,7 @@ router.post('/api/generate-callback', async (req, res) => {
 });
 
 // 3. POST /api/complete-config 完善配置（第二步）
-router.post('/api/complete-config', async (req, res) => {
+router.post('/api/complete-config', requireAuth, async (req, res) => {
     try {
         const { code, corpsecret, agentid, touser, description } = req.body;
         const result = await notifier.completeConfiguration({ code, corpsecret, agentid, touser, description });
@@ -68,7 +82,7 @@ router.post('/api/complete-config', async (req, res) => {
 });
 
 // 3.1 POST /api/configure 保存配置并生成唯一code（保持兼容性）
-router.post('/api/configure', async (req, res) => {
+router.post('/api/configure', requireAuth, async (req, res) => {
     try {
         const { corpid, corpsecret, agentid, touser, description } = req.body;
         const result = await notifier.createConfiguration({ corpid, corpsecret, agentid, touser, description });
@@ -81,12 +95,24 @@ router.post('/api/configure', async (req, res) => {
 // 4. POST /api/notify/:code 发送通知
 router.post('/api/notify/:code', async (req, res) => {
     const { code } = req.params;
-    const { title, content } = req.body;
-    if (!content) {
+    const { 
+        title, 
+        content, 
+        msgType = 'text',
+        mediaId,
+        url,
+        btntxt,
+        articles,
+        safe = 0
+    } = req.body;
+
+    if (!content && msgType !== 'image' && msgType !== 'file' && msgType !== 'news') {
         return res.status(400).json({ error: '消息内容不能为空' });
     }
+
     try {
-        const result = await notifier.sendNotification(code, title, content);
+        const options = { msgType, mediaId, url, btntxt, articles, safe };
+        const result = await notifier.sendNotification(code, title, content, options);
         res.json({ message: '发送成功', response: result });
     } catch (err) {
         if (err.message && err.message.includes('未找到配置')) {
@@ -98,7 +124,7 @@ router.post('/api/notify/:code', async (req, res) => {
 });
 
 // 5. GET /api/configuration/:code 获取配置信息
-router.get('/api/configuration/:code', async (req, res) => {
+router.get('/api/configuration/:code', requireAuth, async (req, res) => {
     const { code } = req.params;
     try {
         const config = await notifier.getConfiguration(code);
@@ -112,7 +138,7 @@ router.get('/api/configuration/:code', async (req, res) => {
 });
 
 // 6. PUT /api/configuration/:code 更新配置
-router.put('/api/configuration/:code', async (req, res) => {
+router.put('/api/configuration/:code', requireAuth, async (req, res) => {
     const { code } = req.params;
     try {
         const result = await notifier.updateConfiguration(code, req.body);

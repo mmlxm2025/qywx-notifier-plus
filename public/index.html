@@ -34,10 +34,16 @@
                     <i data-lucide="bell-ring" class="h-8 w-8"></i>
                     企业微信通知服务
                 </h1>
-                <a href="/public/api-docs.html" class="btn btn-sm btn-outline btn-primary gap-1">
-                    <i data-lucide="book-open" class="h-4 w-4"></i>
-                    API文档
-                </a>
+                <div class="flex gap-2">
+                    <button type="button" id="logout-btn" class="btn btn-sm btn-outline btn-error gap-1">
+                        <i data-lucide="log-out" class="h-4 w-4"></i>
+                        登出
+                    </button>
+                    <a href="/public/api-docs.html" class="btn btn-sm btn-outline btn-primary gap-1">
+                        <i data-lucide="book-open" class="h-4 w-4"></i>
+                        API文档
+                    </a>
+                </div>
             </div>
             <div class="mt-2">
                 <p class="text-base-content/70">轻量级企业微信消息推送服务，一次配置，随时调用</p>

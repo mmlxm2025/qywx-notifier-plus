@@ -2,6 +2,8 @@
 // 封装与企业微信API的HTTP请求
 
 const axios = require('axios');
+const FormData = require('form-data');
+const fs = require('fs');
 
 class WeChatService {
     constructor(apiBase = 'https://qyapi.weixin.qq.com') {
@@ -50,20 +52,79 @@ class WeChatService {
         }
     }
 
-    // 发送应用消息
-    async sendMessage(accessToken, agentid, touser, message) {
+    // 上传临时素材
+    async uploadMedia(accessToken, type, filePath) {
         try {
-            // 构造消息体
+            const form = new FormData();
+            form.append('media', fs.createReadStream(filePath));
+
+            const response = await axios.post(
+                `${this.apiBase}/cgi-bin/media/upload?access_token=${accessToken}&type=${type}`,
+                form,
+                {
+                    headers: {
+                        ...form.getHeaders()
+                    }
+                }
+            );
+
+            const { data } = response;
+            
+            if (data.errcode !== 0) {
+                throw new Error(`上传素材失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            console.log(`素材上传成功, media_id: ${data.media_id}`);
+            return data;
+        } catch (error) {
+            console.error('上传素材失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 上传图片素材（用于图文消息中的图片）
+    async uploadImage(accessToken, filePath) {
+        try {
+            const form = new FormData();
+            form.append('media', fs.createReadStream(filePath));
+
+            const response = await axios.post(
+                `${this.apiBase}/cgi-bin/media/uploadimg?access_token=${accessToken}`,
+                form,
+                {
+                    headers: {
+                        ...form.getHeaders()
+                    }
+                }
+            );
+
+            const { data } = response;
+            
+            if (data.errcode !== 0) {
+                throw new Error(`上传图片失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            console.log(`图片上传成功, url: ${data.url}`);
+            return data;
+        } catch (error) {
+            console.error('上传图片失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 发送文本消息
+    async sendTextMessage(accessToken, agentid, touser, content, safe = 0) {
+        try {
             const messageBody = {
                 touser: Array.isArray(touser) ? touser.join('|') : touser,
                 msgtype: 'text',
                 agentid: agentid,
                 text: {
-                    content: message
-                }
+                    content: content
+                },
+                safe: safe
             };
 
-            // 发送消息
             const response = await axios.post(
                 `${this.apiBase}/cgi-bin/message/send?access_token=${accessToken}`,
                 messageBody
@@ -72,15 +133,183 @@ class WeChatService {
             const { data } = response;
             
             if (data.errcode !== 0) {
-                throw new Error(`发送消息失败: ${data.errmsg} (错误码: ${data.errcode})`);
+                throw new Error(`发送文本消息失败: ${data.errmsg} (错误码: ${data.errcode})`);
             }
 
-            console.log('消息发送成功');
+            console.log('文本消息发送成功');
             return data;
         } catch (error) {
-            console.error('发送消息失败:', error.message);
+            console.error('发送文本消息失败:', error.message);
             throw error;
         }
+    }
+
+    // 发送Markdown消息
+    async sendMarkdownMessage(accessToken, agentid, touser, content, safe = 0) {
+        try {
+            const messageBody = {
+                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                msgtype: 'markdown',
+                agentid: agentid,
+                markdown: {
+                    content: content
+                },
+                safe: safe
+            };
+
+            const response = await axios.post(
+                `${this.apiBase}/cgi-bin/message/send?access_token=${accessToken}`,
+                messageBody
+            );
+
+            const { data } = response;
+            
+            if (data.errcode !== 0) {
+                throw new Error(`发送Markdown消息失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            console.log('Markdown消息发送成功');
+            return data;
+        } catch (error) {
+            console.error('发送Markdown消息失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 发送图片消息
+    async sendImageMessage(accessToken, agentid, touser, mediaId, safe = 0) {
+        try {
+            const messageBody = {
+                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                msgtype: 'image',
+                agentid: agentid,
+                image: {
+                    media_id: mediaId
+                },
+                safe: safe
+            };
+
+            const response = await axios.post(
+                `${this.apiBase}/cgi-bin/message/send?access_token=${accessToken}`,
+                messageBody
+            );
+
+            const { data } = response;
+            
+            if (data.errcode !== 0) {
+                throw new Error(`发送图片消息失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            console.log('图片消息发送成功');
+            return data;
+        } catch (error) {
+            console.error('发送图片消息失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 发送文件消息
+    async sendFileMessage(accessToken, agentid, touser, mediaId, safe = 0) {
+        try {
+            const messageBody = {
+                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                msgtype: 'file',
+                agentid: agentid,
+                file: {
+                    media_id: mediaId
+                },
+                safe: safe
+            };
+
+            const response = await axios.post(
+                `${this.apiBase}/cgi-bin/message/send?access_token=${accessToken}`,
+                messageBody
+            );
+
+            const { data } = response;
+            
+            if (data.errcode !== 0) {
+                throw new Error(`发送文件消息失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            console.log('文件消息发送成功');
+            return data;
+        } catch (error) {
+            console.error('发送文件消息失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 发送文本卡片消息
+    async sendTextCardMessage(accessToken, agentid, touser, title, description, url, btntxt = '详情', safe = 0) {
+        try {
+            const messageBody = {
+                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                msgtype: 'textcard',
+                agentid: agentid,
+                textcard: {
+                    title: title,
+                    description: description,
+                    url: url,
+                    btntxt: btntxt
+                },
+                safe: safe
+            };
+
+            const response = await axios.post(
+                `${this.apiBase}/cgi-bin/message/send?access_token=${accessToken}`,
+                messageBody
+            );
+
+            const { data } = response;
+            
+            if (data.errcode !== 0) {
+                throw new Error(`发送文本卡片消息失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            console.log('文本卡片消息发送成功');
+            return data;
+        } catch (error) {
+            console.error('发送文本卡片消息失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 发送图文消息
+    async sendNewsMessage(accessToken, agentid, touser, articles, safe = 0) {
+        try {
+            const messageBody = {
+                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                msgtype: 'news',
+                agentid: agentid,
+                news: {
+                    articles: articles
+                },
+                safe: safe
+            };
+
+            const response = await axios.post(
+                `${this.apiBase}/cgi-bin/message/send?access_token=${accessToken}`,
+                messageBody
+            );
+
+            const { data } = response;
+            
+            if (data.errcode !== 0) {
+                throw new Error(`发送图文消息失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            console.log('图文消息发送成功');
+            return data;
+        } catch (error) {
+            console.error('发送图文消息失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 发送应用消息（兼容旧接口）
+    async sendMessage(accessToken, agentid, touser, message) {
+        return this.sendTextMessage(accessToken, agentid, touser, message);
     }
 
     // 获取部门列表

@@ -1,6 +1,59 @@
 // 企业微信通知配置前端交互脚本
 
 document.addEventListener('DOMContentLoaded', function () {
+    const token = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('authToken');
+    if (!token) {
+        window.location.href = '/login';
+        return;
+    }
+    localStorage.setItem('authToken', token);
+
+    async function checkAuth() {
+        try {
+            const res = await fetch('/api/auth-status', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const data = await res.json();
+            if (!data.loggedIn) {
+                window.location.href = '/login';
+                return false;
+            }
+            return true;
+        } catch (err) {
+            window.location.href = '/login';
+            return false;
+        }
+    }
+
+    checkAuth().then(isAuth => {
+        if (!isAuth) return;
+        initApp();
+    });
+
+    function getAuthHeaders() {
+        const token = localStorage.getItem('authToken');
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+        };
+    }
+
+    function initApp() {
+        lucide.createIcons();
+    }
+
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            const token = localStorage.getItem('authToken');
+            await fetch('/api/logout', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            localStorage.removeItem('authToken');
+            window.location.href = '/login';
+        });
+    }
     // 元素引用
     const callbackForm = document.getElementById('callbackForm');
     const configForm = document.getElementById('configForm');
@@ -43,7 +96,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const res = await fetch('/api/generate-callback', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({
                     corpid,
                     callback_token: callbackToken,
@@ -89,7 +142,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const res = await fetch('/api/validate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ corpid, corpsecret })
             });
             const data = await res.json();
@@ -124,7 +177,9 @@ document.addEventListener('DOMContentLoaded', function () {
         lookupResultDiv.innerHTML = '<div class="loading loading-spinner loading-md mx-auto"></div>';
 
         try {
-            const res = await fetch(`/api/configuration/${code}`);
+            const res = await fetch(`/api/configuration/${code}`, {
+                headers: getAuthHeaders()
+            });
             const data = await res.json();
 
             if (!res.ok) throw new Error(data.error || '查找配置失败');
@@ -295,7 +350,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const res = await fetch('/api/complete-config', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(payload)
             });
             const data = await res.json();

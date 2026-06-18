@@ -111,16 +111,52 @@
                                 </thead>
                                 <tbody>
                                     <tr>
+                                        <td class="font-mono">msgType</td>
+                                        <td>String</td>
+                                        <td>否</td>
+                                        <td>消息类型，默认: text。可选值: text, markdown, image, file, textcard, news</td>
+                                    </tr>
+                                    <tr>
                                         <td class="font-mono">title</td>
                                         <td>String</td>
                                         <td>否</td>
-                                        <td>消息标题，可选。如果提供，将作为消息的第一行显示，并会加粗处理。</td>
+                                        <td>消息标题。文本/文本卡片/图文消息必填。</td>
                                     </tr>
                                     <tr>
                                         <td class="font-mono">content</td>
                                         <td>String</td>
-                                        <td>是</td>
-                                        <td>消息内容，必填。支持简单的markdown格式，如加粗、链接等。</td>
+                                        <td>否</td>
+                                        <td>消息内容。文本/Markdown/文本卡片消息必填。</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">mediaId</td>
+                                        <td>String</td>
+                                        <td>否</td>
+                                        <td>媒体文件ID。图片/文件消息必填，需要通过素材上传接口获取。</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">url</td>
+                                        <td>String</td>
+                                        <td>否</td>
+                                        <td>点击消息后跳转的链接。文本卡片/图文消息必填。</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">btntxt</td>
+                                        <td>String</td>
+                                        <td>否</td>
+                                        <td>按钮文字。文本卡片消息可选，默认为"详情"。</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">articles</td>
+                                        <td>Array</td>
+                                        <td>否</td>
+                                        <td>图文消息数组。图文消息必填，每项包含title,description,url,picurl。</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">safe</td>
+                                        <td>Int</td>
+                                        <td>否</td>
+                                        <td>是否保密消息，0否(默认)，1是。图片/文件/文本卡片/图文消息支持。</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -150,6 +186,97 @@
     "msgid": "MSGID1234567890"
   }
 }</pre>
+                        </div>
+                    </div>
+
+                    <!-- 消息类型示例 -->
+                    <div>
+                        <h3 class="font-medium mb-2 text-lg">不同消息类型示例</h3>
+                        
+                        <!-- 文本消息 -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-md mb-2">
+                            <input type="checkbox" checked />
+                            <div class="collapse-title font-medium">文本消息 (text)</div>
+                            <div class="collapse-content">
+<pre class="text-sm">{
+  "msgType": "text",
+  "title": "告警通知",
+  "content": "服务器 CPU 使用率过高，请及时处理！"
+}</pre>
+                            </div>
+                        </div>
+
+                        <!-- Markdown 消息 -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-md mb-2">
+                            <input type="checkbox" />
+                            <div class="collapse-title font-medium">Markdown 消息 (markdown)</div>
+                            <div class="collapse-content">
+<pre class="text-sm">{
+  "msgType": "markdown",
+  "title": "告警通知",
+  "content": "您的会议室已经预定成功\n> 会议室：**3楼301**\n> 时间：**14:00-16:00**\n> 组织者：@张三\n\n请准时参加会议。"
+}</pre>
+                            </div>
+                        </div>
+
+                        <!-- 文本卡片消息 -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-md mb-2">
+                            <input type="checkbox" />
+                            <div class="collapse-title font-medium">文本卡片消息 (textcard)</div>
+                            <div class="collapse-content">
+<pre class="text-sm">{
+  "msgType": "textcard",
+  "title": "领奖通知",
+  "content": "恭喜您获得精美礼品一份，请于本周五前到行政部领取。",
+  "url": "https://example.com/prize",
+  "btntxt": "查看详情"
+}</pre>
+                            </div>
+                        </div>
+
+                        <!-- 图文消息 -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-md mb-2">
+                            <input type="checkbox" />
+                            <div class="collapse-title font-medium">图文消息 (news)</div>
+                            <div class="collapse-content">
+<pre class="text-sm">{
+  "msgType": "news",
+  "articles": [
+    {
+      "title": "公司年度旅游通知",
+      "description": "一年一度的公司旅游即将开始，欢迎大家积极报名参加！",
+      "url": "https://example.com/travel",
+      "picurl": "https://example.com/images/travel.jpg"
+    }
+  ]
+}</pre>
+                            </div>
+                        </div>
+
+                        <!-- 图片消息 -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-md mb-2">
+                            <input type="checkbox" />
+                            <div class="collapse-title font-medium">图片消息 (image)</div>
+                            <div class="collapse-content">
+<pre class="text-sm">{
+  "msgType": "image",
+  "mediaId": "MEDIA_ID",
+  "safe": 0
+}</pre>
+                            </div>
+                        </div>
+
+                        <!-- 文件消息 -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-md mb-2">
+                            <input type="checkbox" />
+                            <div class="collapse-title font-medium">文件消息 (file)</div>
+                            <div class="collapse-content">
+<pre class="text-sm">{
+  "msgType": "file",
+  "mediaId": "MEDIA_ID",
+  "safe": 0
+}</pre>
+                            </div>
                         </div>
                     </div>
 

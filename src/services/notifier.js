@@ -190,27 +190,71 @@ async function createConfiguration(config) {
  * @param {string} code - 唯一配置code
  * @param {string} title - 消息标题
  * @param {string} content - 消息内容
+ * @param {Object} options - 消息选项
  * @returns {Promise<Object>} - 企业微信API返回结果
  */
-async function sendNotification(code, title, content) {
-    // 查询配置
+async function sendNotification(code, title, content, options = {}) {
+    const {
+        msgType = 'text',
+        mediaId,
+        url,
+        btntxt,
+        articles,
+        safe = 0
+    } = options;
+
     const config = await db.getConfigurationByCode(code);
     if (!config) {
         throw new Error('无效的code，未找到配置');
     }
-    // 解密corpsecret
+    
     const corpsecret = crypto.decrypt(config.encrypted_corpsecret);
-    // 获取access_token
     const accessToken = await wechat.getToken(config.corpid, corpsecret);
-    // 组装消息内容
-    const message = title ? `${title}\n${content}` : content;
-    // 发送消息
-    const result = await wechat.sendMessage(
-        accessToken,
-        config.agentid,
-        config.touser,
-        message
-    );
+
+    let result;
+    switch (msgType) {
+        case 'text':
+            const message = title ? `${title}\n${content}` : content;
+            result = await wechat.sendTextMessage(accessToken, config.agentid, config.touser, message, safe);
+            break;
+            
+        case 'markdown':
+            const markdownContent = title ? `**${title}**\n\n${content}` : content;
+            result = await wechat.sendMarkdownMessage(accessToken, config.agentid, config.touser, markdownContent, safe);
+            break;
+            
+        case 'image':
+            if (!mediaId) {
+                throw new Error('图片消息需要提供media_id');
+            }
+            result = await wechat.sendImageMessage(accessToken, config.agentid, config.touser, mediaId, safe);
+            break;
+            
+        case 'file':
+            if (!mediaId) {
+                throw new Error('文件消息需要提供media_id');
+            }
+            result = await wechat.sendFileMessage(accessToken, config.agentid, config.touser, mediaId, safe);
+            break;
+            
+        case 'textcard':
+            if (!title || !content || !url) {
+                throw new Error('文本卡片消息需要提供title、content和url');
+            }
+            result = await wechat.sendTextCardMessage(accessToken, config.agentid, config.touser, title, content, url, btntxt, safe);
+            break;
+            
+        case 'news':
+            if (!articles || !Array.isArray(articles) || articles.length === 0) {
+                throw new Error('图文消息需要提供articles数组');
+            }
+            result = await wechat.sendNewsMessage(accessToken, config.agentid, config.touser, articles, safe);
+            break;
+            
+        default:
+            throw new Error(`不支持的消息类型: ${msgType}`);
+    }
+    
     return result;
 }
 
