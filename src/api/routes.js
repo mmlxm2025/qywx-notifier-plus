@@ -24,6 +24,27 @@ const requireAuth = (req, res, next) => {
     next();
 };
 
+function getConfigurationUsersStatus(err) {
+    if (err.statusCode) return err.statusCode;
+
+    const message = err.message || '';
+    if (message.includes('\u672a\u627e\u5230\u914d\u7f6e')) return 404;
+    if (message.includes('\u914d\u7f6e\u5c1a\u672a\u5b8c\u6210')) return 400;
+    if (message.includes('\u83b7\u53d6\u6210\u5458\u5217\u8868\u5931\u8d25')) return 400;
+    if (message.includes('\u83b7\u53d6token\u5931\u8d25')) return 400;
+    return 500;
+}
+
+function getUpdateConfigurationStatus(err) {
+    if (err.statusCode) return err.statusCode;
+
+    const message = err.message || '';
+    if (message.includes('\u672a\u627e\u5230\u914d\u7f6e')) return 404;
+    if (message.includes('\u8bf7\u81f3\u5c11\u9009\u62e9\u4e00\u4e2a\u6210\u5458')) return 400;
+    if (message.includes('\u914d\u7f6e\u5df2\u5b58\u5728')) return 409;
+    return 500;
+}
+
 // 1. GET / 返回前端页面
 router.get('/', (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
@@ -124,6 +145,16 @@ router.post('/api/notify/:code', async (req, res) => {
 });
 
 // 5. GET /api/configuration/:code 获取配置信息
+router.get('/api/configuration/:code/users', requireAuth, async (req, res) => {
+    const { code } = req.params;
+    try {
+        const result = await notifier.getConfigMembers(code);
+        res.json(result);
+    } catch (err) {
+        res.status(getConfigurationUsersStatus(err)).json({ error: err.message || '获取成员列表失败' });
+    }
+});
+
 router.get('/api/configuration/:code', requireAuth, async (req, res) => {
     const { code } = req.params;
     try {
@@ -144,7 +175,7 @@ router.put('/api/configuration/:code', requireAuth, async (req, res) => {
         const result = await notifier.updateConfiguration(code, req.body);
         res.json(result);
     } catch (err) {
-        res.status(500).json({ error: err.message || '更新配置失败' });
+        res.status(getUpdateConfigurationStatus(err)).json({ error: err.message || '更新配置失败' });
     }
 });
 

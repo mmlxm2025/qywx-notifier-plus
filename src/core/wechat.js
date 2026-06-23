@@ -357,6 +357,30 @@ class WeChatService {
         }
     }
 
+    // 获取部门成员简要列表
+    async getDepartmentUsers(accessToken, departmentId = 1) {
+        try {
+            const response = await axios.get(`${this.apiBase}/cgi-bin/user/simplelist`, {
+                params: {
+                    access_token: accessToken,
+                    department_id: departmentId,
+                    fetch_child: 1
+                }
+            });
+
+            const { data } = response;
+
+            if (data.errcode !== 0) {
+                throw new Error(`获取成员列表失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            return data.userlist || [];
+        } catch (error) {
+            console.error('获取部门成员失败:', error.message);
+            throw error;
+        }
+    }
+
     // 获取所有成员（遍历所有部门）
     async getAllUsers(accessToken) {
         try {
@@ -386,4 +410,4 @@ class WeChatService {
     }
 }
 
-module.exports = WeChatService; 
+module.exports = WeChatService;

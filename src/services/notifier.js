@@ -19,6 +19,19 @@ const wechat = new WeChatService();
 // 初始化数据库（仅需调用一次）
 db.init().catch(console.error);
 
+function createError(message, statusCode) {
+    const error = new Error(message);
+    if (statusCode) {
+        error.statusCode = statusCode;
+    }
+    return error;
+}
+
+function normalizeTouser(value) {
+    const list = Array.isArray(value) ? value : String(value || '').split('|');
+    return [...new Set(list.map(item => String(item).trim()).filter(Boolean))];
+}
+
 /**
  * 创建回调配置（第一步）
  * @param {Object} config - { corpid, callback_token, encoding_aes_key }
@@ -263,6 +276,39 @@ async function sendNotification(code, title, content, options = {}) {
  * @param {string} code - 唯一配置code
  * @returns {Promise<Object>} - 配置信息
  */
+async function getConfigMembers(code) {
+    if (!code) {
+        throw createError('\u65e0\u6548\u7684code\uff0c\u672a\u627e\u5230\u914d\u7f6e', 404);
+    }
+
+    const config = await db.getConfigurationByCode(code);
+    if (!config) {
+        throw createError('\u65e0\u6548\u7684code\uff0c\u672a\u627e\u5230\u914d\u7f6e', 404);
+    }
+
+    const current = normalizeTouser(config.touser);
+    if (!config.encrypted_corpsecret || !config.agentid || current.length === 0) {
+        throw createError('\u914d\u7f6e\u5c1a\u672a\u5b8c\u6210\uff0c\u8bf7\u5148\u5b8c\u6210\u7b2c\u4e8c\u6b65\u914d\u7f6e', 400);
+    }
+
+    const corpsecret = crypto.decrypt(config.encrypted_corpsecret);
+    const accessToken = await wechat.getToken(config.corpid, corpsecret);
+    const users = await wechat.getDepartmentUsers(accessToken);
+    const visibleUserids = new Set(users.map(user => user.userid).filter(Boolean));
+
+    return {
+        users: users
+            .filter(user => user.userid)
+            .map(user => ({
+                userid: user.userid,
+                name: user.name || user.userid,
+                displayName: user.name || user.userid
+            })),
+        current,
+        orphan: current.filter(userid => !visibleUserids.has(userid))
+    };
+}
+
 async function getConfiguration(code) {
     const config = await db.getConfigurationByCode(code);
     if (!config) return null;
@@ -299,6 +345,12 @@ async function updateConfiguration(code, newConfig) {
     }
 
     // 如果提供了新的corpsecret，则加密
+    const hasTouser = Object.prototype.hasOwnProperty.call(newConfig, 'touser');
+    const normalizedTouser = hasTouser ? normalizeTouser(newConfig.touser) : null;
+    if (hasTouser && normalizedTouser.length === 0) {
+        throw createError('\u8bf7\u81f3\u5c11\u9009\u62e9\u4e00\u4e2a\u6210\u5458', 400);
+    }
+
     let encrypted_corpsecret = config.encrypted_corpsecret;
     if (newConfig.corpsecret) {
         encrypted_corpsecret = crypto.encrypt(newConfig.corpsecret);
@@ -311,12 +363,20 @@ async function updateConfiguration(code, newConfig) {
     }
 
     // 更新数据库
+    const targetCorpid = newConfig.corpid || config.corpid;
+    const targetAgentid = newConfig.agentid || config.agentid;
+    const targetTouser = hasTouser ? normalizedTouser.join('|') : config.touser;
+    const duplicate = await db.getConfigurationByFields(targetCorpid, targetAgentid, targetTouser);
+    if (duplicate && duplicate.code !== code) {
+        throw createError('\u76f8\u540c\u4f01\u4e1a\u3001\u5e94\u7528\u548c\u63a5\u6536\u4eba\u5458\u7684\u914d\u7f6e\u5df2\u5b58\u5728', 409);
+    }
+
     await db.updateConfiguration({
         code,
-        corpid: newConfig.corpid || config.corpid,
+        corpid: targetCorpid,
         encrypted_corpsecret,
-        agentid: newConfig.agentid || config.agentid,
-        touser: newConfig.touser ? (Array.isArray(newConfig.touser) ? newConfig.touser.join('|') : newConfig.touser) : config.touser,
+        agentid: targetAgentid,
+        touser: targetTouser,
         description: newConfig.description !== undefined ? newConfig.description : config.description,
         callback_token: newConfig.callback_token !== undefined ? newConfig.callback_token : config.callback_token,
         encrypted_encoding_aes_key,
@@ -428,6 +488,7 @@ module.exports = {
     completeConfiguration,
     createConfiguration,
     sendNotification,
+    getConfigMembers,
     getConfiguration,
     updateConfiguration,
     handleCallbackVerification,
