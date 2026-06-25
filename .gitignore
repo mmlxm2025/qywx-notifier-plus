@@ -37,4 +37,10 @@ pids/
 
 # OS
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# ===== Docker 部署交付物（镜像包不提交版本库）=====
+deploy/*.tar
+deploy/*.tar.gz
+deploy/.env
+.mcp-ssh.lock
