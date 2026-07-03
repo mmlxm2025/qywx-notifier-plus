@@ -31,18 +31,22 @@ public/              # 前端页面
 
 ## 部署
 
-推荐使用 Docker 部署，详见 **[deploy/README-1PANEL.md](deploy/README-1PANEL.md)**。
+推荐使用 Docker 部署。第一次部署请按 **[新手部署指南](deploy/README-1PANEL.md)** 操作，其中包含 `.env` 创建、随机密钥生成、1Panel 图形界面、更新、备份和常见问题说明。
 
 镜像地址：`ghcr.io/mmlxm2025/qywx-notifier-plus:latest`
 
 ```bash
-docker pull ghcr.io/mmlxm2025/qywx-notifier-plus:latest
-docker compose up -d
+mkdir -p /opt/qywx-notifier-plus && cd /opt/qywx-notifier-plus
+curl -fsSL https://raw.githubusercontent.com/mmlxm2025/qywx-notifier-plus/main/deploy/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/mmlxm2025/qywx-notifier-plus/main/deploy/.env.example -o .env.example
+cp .env.example .env
+# 按新手部署指南修改 .env 后再执行：
+docker compose pull && docker compose up -d
 ```
 
 推送到 `main` 分支或创建 `v*` 标签时，GitHub Actions 会自动运行测试、构建镜像并推送到 GitHub Container Registry。
 
-核心流程：构建镜像 → 打包 tar.gz → 上传到 1Panel 服务器 → 导入镜像 → 创建「编排」。
+核心流程：下载编排文件 → 创建并修改 `.env` → 拉取镜像 → 启动服务。无法访问 GHCR 时，再使用文档中的离线镜像方案。
 
 镜像**不含任何配置 / 密码 / 数据**，所有敏感项通过环境变量（`.env`）注入，数据库通过卷持久化。
 

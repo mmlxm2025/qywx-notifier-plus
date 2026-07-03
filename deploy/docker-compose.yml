@@ -2,9 +2,9 @@
 # 企业微信通知转发服务 - 1Panel 编排文件
 #
 # 说明：
-#   - 此文件直接引用 GHCR 镜像 ghcr.io/mmlxm2025/qywx-notifier-plus:latest
-#     （由 docker load 导入，见 deploy/import-load.sh）
-#     因此 1Panel 服务器【无需源码、无需联网构建】。
+#   - 默认直接拉取 GHCR 镜像 ghcr.io/mmlxm2025/qywx-notifier-plus:latest
+#   - 离线导入时，deploy/import-load.sh 会通过 IMAGE 变量使用本地镜像。
+#   - 1Panel 服务器无需源码，也无需自己构建镜像。
 #   - 所有敏感配置（加密密钥、管理员密码）通过 .env 文件注入，
 #     镜像本身不含任何密钥或数据。
 #   - 数据库通过命名卷持久化，删除容器数据不丢。
@@ -31,9 +31,9 @@ services:
       - DB_PATH=/app/database/notifier.db
       - NODE_ENV=production
       - WECHAT_API_BASE=${WECHAT_API_BASE:-https://qyapi.weixin.qq.com}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?请先在 .env 中设置 ENCRYPTION_KEY}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
 
     # 健康检查（镜像已内置，此处仅作编排层声明）
     healthcheck:

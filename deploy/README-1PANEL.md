@@ -1,219 +1,335 @@
-# 企业微信通知转发服务 · 1Panel 编排部署指南
+# qywx-notifier-plus 新手部署指南（1Panel / Docker）
 
-本指南指导你在 **1Panel** 中通过「编排」部署本服务。
+本文适合第一次使用 Docker 或 1Panel 的用户。推荐直接拉取 GitHub Container Registry 中的公开镜像，无需下载源码，也无需自己构建镜像。
 
-> 镜像 **不含任何配置、密码、数据**：所有敏感项通过 `.env` 注入，数据库通过卷持久化。1Panel 服务器**无需源码、无需联网构建**。
+镜像地址：`ghcr.io/mmlxm2025/qywx-notifier-plus:latest`
 
----
+> `.env` 保存管理员密码和数据加密密钥，不能上传到 GitHub、发到群里或截图公开。数据库保存在 Docker 命名卷中，更新或重建容器不会自动丢失数据。
 
-## 一、交付物清单
+## 一、部署前准备
 
-构建产物全部在 `deploy/` 目录，需要一起上传到 1Panel 服务器：
+请先确认：
 
-| 文件 | 说明 | 必需 |
-|------|------|------|
-| `qywx-notifier-plus-1.0.0.tar.gz` | 打包好的 Docker 镜像 | ✅ |
-| `docker-compose.yml` | 1Panel 编排文件（引用本地镜像） | ✅ |
-| `.env.example` | 环境变量模板 | ✅ |
-| `import-load.sh` | 一键导入+启动脚本（可选，命令行用） | 可选 |
-| `README-1PANEL.md` | 本文档 | 可选 |
+- 已安装 1Panel，并在 1Panel 的「容器」页面安装了 Docker。
+- 服务器能够访问 `ghcr.io`。
+- 知道服务器公网 IP；若只在内网使用，也可以使用内网 IP。
+- 服务器安全组和防火墙允许访问准备使用的端口，默认是 `12121`。
 
----
-
-## 二、整体流程
-
-```
-[构建机] 构建+打包 tar.gz
-        │ 上传
-        ▼
-[1Panel 服务器]  导入镜像 → 配置 .env → 创建编排 → 访问
-```
-
----
-
-## 三、第一步：构建并打包（在开发机/任意装了 Docker 的机器上）
-
-> 已由开发者完成，产物为 `deploy/qywx-notifier-plus-1.0.0.tar.gz`。
-> 如需自行重建，执行：
+在 1Panel 左侧打开「终端」，或通过 SSH 登录服务器，然后运行：
 
 ```bash
-# Linux / macOS / WSL
-chmod +x deploy/build-and-pack.sh
-./deploy/build-and-pack.sh
+docker --version
+docker compose version
 ```
 
-或在 Windows 上双击 `deploy\build-and-pack.bat`。
+两条命令都能显示版本号即可继续。
 
-产物：`deploy/qywx-notifier-plus-1.0.0.tar.gz`。
+## 二、推荐部署：五步完成
 
----
+### 第 1 步：创建部署目录并下载配置文件
 
-## 四、第二步：上传到 1Panel 服务器
-
-把 `deploy/` 目录下的这些文件，上传到服务器**同一个目录**（建议放 `/opt/qywx-notifier-plus/`）：
-
-- `qywx-notifier-plus-1.0.0.tar.gz`
-- `docker-compose.yml`
-- `.env.example`
-
----
-
-## 五、第三步：导入镜像
-
-### 方式 A：1Panel 界面导入（推荐，可视化）
-
-1. 登录 1Panel → 左侧菜单 **「容器」→「镜像」**
-2. 点击 **「导入镜像」**
-3. 选择上传的 `qywx-notifier-plus-1.0.0.tar.gz`（或先解压成 `.tar`）
-4. 确认导入，列表中出现 `qywx-notifier-plus:1.0.0` 即成功
-
-### 方式 B：命令行导入
+下面命令可以整段复制到服务器终端执行：
 
 ```bash
+mkdir -p /opt/qywx-notifier-plus
 cd /opt/qywx-notifier-plus
-gunzip -c qywx-notifier-plus-1.0.0.tar.gz | docker load
-# 验证
-docker images | grep qywx-notifier-plus
+
+curl -fsSL https://raw.githubusercontent.com/mmlxm2025/qywx-notifier-plus/main/deploy/docker-compose.yml \
+  -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/mmlxm2025/qywx-notifier-plus/main/deploy/.env.example \
+  -o .env.example
+
+ls -la
 ```
 
----
+最后应当看到 `docker-compose.yml` 和 `.env.example` 两个文件。
 
-## 六、第四步：配置环境变量（重要！）
+如果服务器没有 `curl`，也可以在 1Panel「文件」页面创建 `/opt/qywx-notifier-plus` 目录，然后从本仓库的 `deploy/` 目录下载并上传这两个文件。
+
+### 第 2 步：创建并修改 `.env`
+
+先复制模板，注意目标文件名前面有一个点：
 
 ```bash
 cd /opt/qywx-notifier-plus
 cp .env.example .env
-vi .env
 ```
 
-**必须修改**这两项（其余按需）：
-
-```ini
-# 32 位随机字符串，用于加密数据库里的 corpsecret / EncodingAESKey
-ENCRYPTION_KEY=<改成 32 位随机字符串>
-
-# 管理后台登录密码
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=<改成你自己的强密码>
-```
-
-生成 32 位随机字符串：
+分别生成加密密钥和管理员密码：
 
 ```bash
+# 第一个结果用于 ENCRYPTION_KEY，必须正好是 32 个字符
+openssl rand -hex 16
+
+# 第二个结果用于 ADMIN_PASSWORD，可直接使用这个随机强密码
 openssl rand -hex 16
 ```
 
-> ⚠️ `ENCRYPTION_KEY` 一旦设定并产生数据后**不可再改**，否则已加密的密文无法解密。
+请把两次输出暂时复制到安全的位置，随后编辑文件：
 
----
+```bash
+nano .env
+```
 
-## 七、第五步：在 1Panel 创建「编排」
+如果提示 `nano: command not found`，可改用 `vi .env`；也可以在 1Panel「文件」页面中打开 `.env` 编辑。若看不到 `.env`，请开启「显示隐藏文件」。
 
-1Panel 对「编排」本质上就是管理一个 docker-compose 项目。两种方式任选：
+修改后的内容类似下面这样。示例值不能直接照抄，请替换成刚才生成的真实随机值：
 
-### 方式 A：界面创建编排（推荐）
+```ini
+# 浏览器访问端口；没有冲突时保持 12121
+HOST_PORT=12121
 
-1. 登录 1Panel → 左侧菜单 **「容器」→「编排」**
-2. 点击 **「创建编排」**
-3. 填写：
-   - **名称**：`qywx-notifier-plus`
-   - **编排目录**：填上传文件的目录，如 `/opt/qywx-notifier-plus`
-   - **来源**：选择 **「使用已有编排文件」**（不要选"在线模板"）
-4. 1Panel 会自动读取该目录下的 `docker-compose.yml`
-5. 点击 **「确认」**，1Panel 自动 `docker compose up -d`
+# 必须是 32 个字符；首次保存业务数据后不要再更换
+ENCRYPTION_KEY=这里粘贴第一次生成的32位随机值
 
-> 如果界面要求粘贴 yml：把 `docker-compose.yml` 内容粘贴进去即可，但要保证编排目录里仍有 `.env` 文件（变量从那里读）。
+# 登录管理页面使用的账号和密码
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=这里粘贴第二次生成的随机强密码
 
-### 方式 B：命令行启动（最快）
+# 企业微信官方 API 地址，通常不需要修改
+WECHAT_API_BASE=https://qyapi.weixin.qq.com
+```
+
+保存文件后，限制其他系统用户读取：
+
+```bash
+chmod 600 .env
+```
+
+各变量的作用：
+
+| 变量 | 是否必改 | 说明 |
+|------|----------|------|
+| `HOST_PORT` | 按需 | 浏览器访问端口，默认 `12121`；端口被占用时可改成 `8080` 等 |
+| `ENCRYPTION_KEY` | 必改 | 加密数据库中的企业微信密钥，必须为 32 个字符 |
+| `ADMIN_USERNAME` | 建议修改 | 管理页面登录账号，默认 `admin` |
+| `ADMIN_PASSWORD` | 必改 | 管理页面登录密码，建议使用上面生成的随机值 |
+| `WECHAT_API_BASE` | 不改 | 企业微信 API 地址 |
+
+重要提醒：
+
+- `ENCRYPTION_KEY` 和 `ADMIN_PASSWORD` 不是企业微信后台的 CorpSecret。
+- `ENCRYPTION_KEY` 在产生业务数据后不能更换，否则已有企业微信密钥将无法解密。
+- 不要在值的两边添加中文引号或多余空格。
+- 自定义密码若包含 `$`、`#` 等符号，可能触发 Compose 解析；新手建议直接使用上述十六进制随机密码。
+
+### 第 3 步：检查 `.env`
+
+运行以下命令：
 
 ```bash
 cd /opt/qywx-notifier-plus
+
+key=$(sed -n 's/^ENCRYPTION_KEY=//p' .env)
+if [ "${#key}" -eq 32 ]; then
+  echo "ENCRYPTION_KEY 长度正确"
+else
+  echo "错误：ENCRYPTION_KEY 必须正好是 32 个字符，当前为 ${#key} 个"
+fi
+
+grep -q '^ADMIN_PASSWORD=change-this-to-a-strong-password$' .env \
+  && echo "错误：ADMIN_PASSWORD 仍是模板值，请修改" \
+  || echo "ADMIN_PASSWORD 已修改"
+
+docker compose config --quiet && echo "Compose 配置检查通过"
+```
+
+必须同时看到：
+
+- `ENCRYPTION_KEY 长度正确`
+- `ADMIN_PASSWORD 已修改`
+- `Compose 配置检查通过`
+
+> 请使用 `docker compose config --quiet`。不要把不带 `--quiet` 的完整输出发给别人，因为其中可能显示已经解析的密码。
+
+### 第 4 步：拉取镜像并启动
+
+```bash
+cd /opt/qywx-notifier-plus
+docker compose pull
 docker compose up -d
-docker compose ps        # 查看状态
-docker compose logs -f   # 看日志
+docker compose ps
 ```
 
-启动成功会看到：
-```
-企业微信通知服务已启动，端口: 12121
+首次拉取镜像需要一些时间。`docker compose ps` 中容器状态最终应显示为 `Up` 或 `healthy`。
+
+查看启动日志：
+
+```bash
+docker compose logs --tail=100
 ```
 
----
+持续查看日志可使用 `docker compose logs -f`，按 `Ctrl+C` 只会退出日志查看，不会停止服务。
 
-## 八、访问与验证
+### 第 5 步：开放端口并访问
+
+在云服务器安全组和 1Panel 防火墙中放行 TCP `12121` 端口。若修改过 `HOST_PORT`，应放行修改后的端口。
 
 浏览器打开：
 
-```
-http://<1Panel服务器IP>:<HOST_PORT>     # 默认 12121
+```text
+http://服务器IP:12121
 ```
 
-- 首次会跳转到登录页，用 `.env` 里的 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登录
-- 登录后按界面引导配置企业微信应用（两步配置流程）
+使用 `.env` 中的 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 登录。登录后再按页面提示填写企业微信的 CorpID、CorpSecret、AgentID、回调 Token 和 EncodingAESKey。
 
-**检查清单**：
+## 三、使用 1Panel 图形界面创建编排
+
+完成上面的第 1～3 步后，也可以不用终端启动：
+
+1. 打开 1Panel「容器」→「编排」。
+2. 点击「创建编排」。
+3. 名称填写 `qywx-notifier-plus`。
+4. 编排目录填写 `/opt/qywx-notifier-plus`。
+5. 选择使用已有的 `docker-compose.yml`；如果页面要求粘贴内容，就粘贴该文件内容。
+6. 确认目录中同时存在 `.env`，然后点击创建或启动。
+7. 在编排详情中确认容器状态为运行中。
+
+如果 1Panel 提示 `ENCRYPTION_KEY` 或 `ADMIN_PASSWORD` 未设置，通常是编排目录填错、`.env` 没有创建，或文件实际被命名成了 `.env.txt`。
+
+## 四、部署后检查
+
+在 `/opt/qywx-notifier-plus` 目录运行：
 
 ```bash
-# 1. 容器在运行
+# 查看容器状态
 docker compose ps
-# 2. 健康检查为 healthy
+
+# 查看健康状态
 docker inspect --format='{{.State.Health.Status}}' qywx-notifier-plus
-# 3. 端口可达
+
+# 从服务器本机测试登录页
 curl -I http://127.0.0.1:12121/login
 ```
 
----
+若修改了 `HOST_PORT`，最后一条命令也要换成对应端口。
 
-## 九、常用运维操作
+## 五、更新版本
+
+GitHub 发布新镜像后运行：
+
+```bash
+cd /opt/qywx-notifier-plus
+docker compose pull
+docker compose up -d
+docker image prune -f
+```
+
+更新不会删除命名卷中的数据库。更新前仍建议先备份。
+
+## 六、修改端口、账号或密码
+
+```bash
+cd /opt/qywx-notifier-plus
+nano .env
+docker compose up -d
+```
+
+- 修改 `HOST_PORT` 后，需要同步调整安全组和防火墙。
+- 修改 `ADMIN_PASSWORD` 后，使用新密码重新登录。
+- 不要修改已经投入使用的 `ENCRYPTION_KEY`。
+
+## 七、备份与恢复
+
+数据库保存在命名卷 `qywx-notifier-plus-data` 中。
+
+备份：
+
+```bash
+cd /opt/qywx-notifier-plus
+docker run --rm \
+  -v qywx-notifier-plus-data:/data \
+  -v "$PWD":/backup \
+  alpine tar czf /backup/qywx-data-$(date +%F).tar.gz -C /data .
+```
+
+恢复前先停止服务，并把备份文件名替换成实际文件名：
+
+```bash
+cd /opt/qywx-notifier-plus
+docker compose down
+docker run --rm \
+  -v qywx-notifier-plus-data:/data \
+  -v "$PWD":/backup \
+  alpine tar xzf /backup/qywx-data-YYYY-MM-DD.tar.gz -C /data
+docker compose up -d
+```
+
+## 八、常用命令
 
 | 操作 | 命令 |
 |------|------|
-| 查看日志 | `docker compose logs -f` |
-| 重启服务 | `docker compose restart` |
-| 停止服务 | `docker compose down` |
-| 更新镜像（新版） | 重新上传新 tar.gz → `docker load` → `docker compose up -d` |
-| 修改配置/密码 | 编辑 `.env` → `docker compose up -d`（容器会重建以读取新值） |
-| 进入容器排查 | `docker exec -it qywx-notifier-plus sh` |
+| 查看状态 | `docker compose ps` |
+| 查看最近日志 | `docker compose logs --tail=100` |
+| 持续查看日志 | `docker compose logs -f` |
+| 重启 | `docker compose restart` |
+| 重新读取 `.env` | `docker compose up -d` |
+| 停止并删除容器 | `docker compose down` |
+| 启动 | `docker compose up -d` |
 
-### 数据备份与恢复
+## 九、常见问题
 
-数据存在 Docker 命名卷 `qywx-notifier-plus-data`：
+### 1. 提示 `ENCRYPTION_KEY` 或 `ADMIN_PASSWORD` 未设置
+
+确认当前目录正确，并检查隐藏文件：
 
 ```bash
-# 备份
-docker run --rm -v qywx-notifier-plus-data:/data -v "$PWD":/backup alpine \
-  tar czf /backup/qywx-data-$(date +%F).tar.gz -C /data .
-
-# 恢复（停服后）
-docker run --rm -v qywx-notifier-plus-data:/data -v "$PWD":/backup alpine \
-  tar xzf /backup/qywx-data-YYYY-MM-DD.tar.gz -C /data
+cd /opt/qywx-notifier-plus
+pwd
+ls -la
 ```
 
----
+目录中必须同时存在 `.env` 和 `docker-compose.yml`。
 
-## 十、常见问题
+### 2. 容器反复重启或显示 `unhealthy`
 
-**Q1：编排启动后容器一直 `unhealthy` 或重启？**
-→ 多半是 `.env` 里 `ENCRYPTION_KEY` 仍是占位符，或长度不对。确认是 32 位字符串。
+```bash
+docker compose logs --tail=200
+```
 
-**Q2：1Panel 界面看不到这个镜像？**
-→ 默认直接拉取 `ghcr.io/mmlxm2025/qywx-notifier-plus:latest`；离线环境也可用 `docker load` 导入本地镜像。
+优先检查 `ENCRYPTION_KEY` 是否正好 32 个字符，以及 `.env` 中是否仍有 `change-this-...` 模板值。
 
-**Q3：`docker compose` 命令不存在？**
-→ 新版 Docker 已内置 `docker compose` 子命令；若 1Panel 用的是老版 docker-compose，改用 `docker-compose up -d`（带连字符）。
+### 3. 浏览器无法访问
 
-**Q4：想改端口？**
-→ 编辑 `.env` 里的 `HOST_PORT`，例如 `HOST_PORT=8080`，然后 `docker compose up -d`。
+依次检查：
 
-**Q5：企业微信回调验证失败 / IP 白名单问题？**
-→ 与镜像无关，属于应用配置。参考项目根目录 `MODIFICATIONS_SUMMARY.md` 的两步配置流程说明。
+1. `docker compose ps` 中容器是否运行。
+2. `curl -I http://127.0.0.1:12121/login` 是否有响应。
+3. 云服务器安全组是否放行 TCP 端口。
+4. 1Panel 防火墙或系统防火墙是否放行端口。
+5. 浏览器地址是否使用了正确的服务器 IP 和 `HOST_PORT`。
 
----
+### 4. 无法从 `ghcr.io` 拉取镜像
+
+确认服务器网络和 DNS 正常。若所在网络无法访问 GHCR，可参考下一节使用离线镜像包。
+
+### 5. `docker compose` 命令不存在
+
+较老环境可能使用 `docker-compose`。建议先在 1Panel 中升级 Docker Compose；临时情况下，可将文档中的 `docker compose` 替换为 `docker-compose`。
+
+## 十、离线部署（仅 GHCR 无法访问时使用）
+
+在一台能够运行 Docker 且可以访问 GitHub 的电脑上下载源码，然后执行：
+
+```bash
+chmod +x deploy/build-and-pack.sh
+./deploy/build-and-pack.sh
+```
+
+Windows 可以运行 `deploy\build-and-pack.bat`。将生成的 `qywx-notifier-plus-1.0.0.tar.gz`、`deploy/docker-compose.yml`、`deploy/.env.example` 和 `deploy/import-load.sh` 上传到服务器同一目录，然后执行：
+
+```bash
+cd /opt/qywx-notifier-plus
+chmod +x import-load.sh
+./import-load.sh
+```
+
+执行前仍需按照本文第 2 步创建并修改 `.env`。
 
 ## 十一、安全建议
 
-1. **务必修改** `ENCRYPTION_KEY` 与 `ADMIN_PASSWORD`，不要用模板默认值
-2. 在 1Panel / 服务器防火墙只放行 `HOST_PORT`，必要时仅限内网
-3. 生产环境建议前置 Nginx + HTTPS（1Panel 自带 OpenResty 可配置反向代理 + 证书）
-4. `.env` 文件权限设为 `600`：`chmod 600 .env`，且**不要提交到 git**
-5. 定期备份 `qywx-notifier-plus-data` 卷
+- `.env` 权限保持为 `600`，不要提交到 Git 或公开分享。
+- 管理端口尽量只向可信 IP 或内网开放。
+- 对公网使用时，建议通过 1Panel 网站功能配置反向代理和 HTTPS。
+- 定期备份 `qywx-notifier-plus-data` 命名卷。
+- 不要把日志、`.env`、数据库文件或带有企业微信凭据的截图发到公开 Issue。
