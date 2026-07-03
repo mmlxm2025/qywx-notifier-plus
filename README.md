@@ -2,6 +2,15 @@
 
 类似 Server 酱的轻量级通知服务，通过企业微信应用消息把告警/通知推送到指定成员，并支持企业微信回调。
 
+本版本面向个人使用或仅由一名管理员维护的场景，不包含多用户、角色权限或团队协作功能。
+
+## 本版主要修改
+
+- 增加管理员登录，避免管理页面直接暴露。
+- 增加自定义 API 规则：每个 API 对应一组独立选择的通知对象。
+- 支持按规则管理接收成员，并为规则生成独立的调用地址。
+- 增加 GitHub Actions，自动测试并发布独立命名的 Docker 镜像。
+
 ## 快速开始
 
 ```bash
@@ -49,6 +58,8 @@ docker compose up -d
 
 > ⚠️ `ENCRYPTION_KEY` 一旦产生数据后不可更改，否则已加密数据无法解密。
 
-## 项目来源
+## Fork 与致谢
 
-本项目基于 [wangwangit/qywx-push](https://github.com/wangwangit/qywx-push) 修改，镜像名称与上游项目明确区分。
+本项目 Fork 自 [wangwangit/qywx-push](https://github.com/wangwangit/qywx-push)，感谢原作者“一只会飞的旺旺”公开并维护原项目。
+
+当前版本在原项目基础上增加了登录、自定义 API 规则和自动发布镜像等功能。为避免与原作者发布的镜像混淆，本项目使用独立名称 `qywx-notifier-plus`。如需了解原始实现或获取上游更新，请访问原项目仓库。
