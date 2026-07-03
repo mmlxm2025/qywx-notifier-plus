@@ -15,6 +15,22 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-for-developmen
 const db = new Database(DB_PATH);
 const crypto = new CryptoService(ENCRYPTION_KEY);
 const wechat = new WeChatService();
+const CONFIG_CACHE_TTL_MS = Number(process.env.CONFIG_CACHE_TTL_MS || 60000);
+const MEMBER_CACHE_TTL_MS = Number(process.env.MEMBER_CACHE_TTL_MS || 300000);
+const SEND_DEDUP_TTL_MS = Number(process.env.SEND_DEDUP_TTL_MS || 30000);
+const MEMBER_MINUTE_LIMIT = Number(process.env.WECHAT_MEMBER_MINUTE_LIMIT || 30);
+const MEMBER_HOUR_LIMIT = Number(process.env.WECHAT_MEMBER_HOUR_LIMIT || 1000);
+const WECHAT_ACCOUNT_LIMIT = Number(process.env.WECHAT_ACCOUNT_LIMIT || 0);
+const APP_DAILY_PERSON_LIMIT = Number(
+    process.env.WECHAT_APP_DAILY_PERSON_LIMIT || (WECHAT_ACCOUNT_LIMIT > 0 ? WECHAT_ACCOUNT_LIMIT * 200 : 0)
+);
+const RATE_BACKOFF_MS = Number(process.env.WECHAT_RATE_BACKOFF_MS || 60000);
+const targetCache = new Map();
+const memberListCache = new Map();
+const sendResultCache = new Map();
+const memberWindows = new Map();
+const appDailyWindows = new Map();
+const backoffWindows = new Map();
 
 // 初始化数据库（仅需调用一次）
 db.init().catch(console.error);
@@ -30,6 +46,223 @@ function createError(message, statusCode) {
 function normalizeTouser(value) {
     const list = Array.isArray(value) ? value : String(value || '').split('|');
     return [...new Set(list.map(item => String(item).trim()).filter(Boolean))];
+}
+
+function normalizeScopeList(value) {
+    const list = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[|,，;；\s]+/);
+    return [...new Set(list.map(item => String(item).trim()).filter(Boolean))];
+}
+
+function toBoolean(value) {
+    return value === true || value === 1 || value === '1' || value === 'true' || value === 'on';
+}
+
+function getCached(map, key) {
+    const cached = map.get(key);
+    if (!cached || cached.expires <= Date.now()) {
+        map.delete(key);
+        return null;
+    }
+    return cached.value;
+}
+
+function setCached(map, key, value, ttlMs) {
+    if (ttlMs <= 0) return value;
+    map.set(key, {
+        value,
+        expires: Date.now() + ttlMs
+    });
+    return value;
+}
+
+function clearRuntimeCaches() {
+    targetCache.clear();
+    memberListCache.clear();
+    sendResultCache.clear();
+}
+
+function estimateRecipientCount(recipient, fallback = 1) {
+    if (recipient.is_all) return Math.max(1, Number(fallback) || 1);
+    const userCount = normalizeScopeList(recipient.touser).length;
+    const partyCount = normalizeScopeList(recipient.toparty).length;
+    const tagCount = normalizeScopeList(recipient.totag).length;
+    if (partyCount > 0 || tagCount > 0) {
+        return Math.max(1, Number(fallback) || userCount || 1);
+    }
+    return Math.max(1, userCount || Number(fallback) || 1);
+}
+
+function normalizeRulePayload(payload, existing = {}) {
+    const isAllRaw = payload.is_all !== undefined
+        ? payload.is_all
+        : (payload.isAll !== undefined ? payload.isAll : existing.is_all);
+    const isAll = toBoolean(isAllRaw);
+    const name = String(payload.name !== undefined ? payload.name : existing.name || '').trim();
+    if (!name) {
+        throw createError('规则名称不能为空', 400);
+    }
+
+    const touser = isAll ? [] : normalizeScopeList(payload.touser !== undefined ? payload.touser : existing.touser);
+    const toparty = isAll ? [] : normalizeScopeList(payload.toparty !== undefined ? payload.toparty : existing.toparty);
+    const totag = isAll ? [] : normalizeScopeList(payload.totag !== undefined ? payload.totag : existing.totag);
+    if (!isAll && touser.length === 0 && toparty.length === 0 && totag.length === 0) {
+        throw createError('请至少配置一个接收范围', 400);
+    }
+
+    const estimatedRaw = payload.estimated_count !== undefined
+        ? payload.estimated_count
+        : (payload.estimatedCount !== undefined ? payload.estimatedCount : existing.estimated_count);
+    const fallbackEstimate = isAll ? 1 : touser.length || 1;
+    const estimatedCount = Math.max(1, Number.parseInt(estimatedRaw, 10) || fallbackEstimate);
+
+    return {
+        name,
+        touser: touser.join('|'),
+        toparty: toparty.join('|'),
+        totag: totag.join('|'),
+        is_all: isAll ? 1 : 0,
+        estimated_count: estimatedCount
+    };
+}
+
+function serializeRule(row) {
+    return {
+        id: row.id,
+        config_code: row.config_code,
+        api_code: row.api_code,
+        apiUrl: `/api/notify/${row.api_code}`,
+        name: row.name,
+        touser: normalizeScopeList(row.touser),
+        toparty: normalizeScopeList(row.toparty),
+        totag: normalizeScopeList(row.totag),
+        is_all: row.is_all === 1 || row.is_all === true,
+        estimated_count: Number(row.estimated_count) || 1,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+    };
+}
+
+function recipientFromRule(rule) {
+    return {
+        is_all: rule.is_all === 1 || rule.is_all === true,
+        touser: rule.touser || '',
+        toparty: rule.toparty || '',
+        totag: rule.totag || ''
+    };
+}
+
+function recipientFromConfig(config) {
+    return {
+        is_all: config.touser === '@all',
+        touser: config.touser || '',
+        toparty: '',
+        totag: ''
+    };
+}
+
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map(stableStringify).join(',')}]`;
+    }
+    if (value && typeof value === 'object') {
+        return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
+function getWindowEntries(map, key, windowMs) {
+    const now = Date.now();
+    const current = map.get(key) || [];
+    const kept = current.filter(item => item > now - windowMs);
+    map.set(key, kept);
+    return kept;
+}
+
+function trackAppDaily(config, estimatedCount) {
+    if (APP_DAILY_PERSON_LIMIT <= 0) return;
+
+    const key = `${config.corpid}:${config.agentid}`;
+    const now = Date.now();
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const current = appDailyWindows.get(key);
+    const bucket = current && current.dayStart === dayStart.getTime()
+        ? current
+        : { dayStart: dayStart.getTime(), count: 0 };
+
+    if (bucket.count + estimatedCount > APP_DAILY_PERSON_LIMIT) {
+        throw createError('已接近企业微信应用消息每日人次限制，请稍后再发送', 429);
+    }
+
+    bucket.count += estimatedCount;
+    appDailyWindows.set(key, bucket);
+}
+
+function trackExplicitMembers(config, recipient) {
+    if (recipient.is_all || recipient.toparty || recipient.totag) return;
+
+    const users = normalizeScopeList(recipient.touser);
+    for (const userid of users) {
+        const key = `${config.corpid}:${config.agentid}:${userid}`;
+        const minuteEntries = getWindowEntries(memberWindows, `${key}:minute`, 60000);
+        if (MEMBER_MINUTE_LIMIT > 0 && minuteEntries.length >= MEMBER_MINUTE_LIMIT) {
+            throw createError(`成员 ${userid} 已达到企业微信每分钟接收频率保护`, 429);
+        }
+
+        const hourEntries = getWindowEntries(memberWindows, `${key}:hour`, 3600000);
+        if (MEMBER_HOUR_LIMIT > 0 && hourEntries.length >= MEMBER_HOUR_LIMIT) {
+            throw createError(`成员 ${userid} 已达到企业微信每小时接收频率保护`, 429);
+        }
+    }
+
+    const now = Date.now();
+    for (const userid of users) {
+        const key = `${config.corpid}:${config.agentid}:${userid}`;
+        memberWindows.get(`${key}:minute`).push(now);
+        memberWindows.get(`${key}:hour`).push(now);
+    }
+}
+
+function assertNotInBackoff(config) {
+    const key = `${config.corpid}:${config.agentid}`;
+    const until = backoffWindows.get(key);
+    if (until && until > Date.now()) {
+        throw createError('企业微信返回限频，当前应用暂时进入退避保护', 429);
+    }
+    if (until) {
+        backoffWindows.delete(key);
+    }
+}
+
+function enterBackoff(config) {
+    const key = `${config.corpid}:${config.agentid}`;
+    backoffWindows.set(key, Date.now() + RATE_BACKOFF_MS);
+}
+
+function isContactPrivilegeError(err) {
+    const message = err && err.message || '';
+    return message.includes('60011') || message.includes('no privilege to access/modify contact/party/agent');
+}
+
+function formatMemberForResponse(user) {
+    const userid = String(user && user.userid || '').trim();
+    if (!userid) return null;
+    const name = user.name || user.displayName || userid;
+    return {
+        userid,
+        name,
+        displayName: name
+    };
+}
+
+function fallbackMembersFromCurrent(current) {
+    return current.map(userid => ({
+        userid,
+        name: userid,
+        displayName: userid
+    }));
 }
 
 /**
@@ -198,6 +431,160 @@ async function createConfiguration(config) {
     return result;
 }
 
+async function listRules(configCode) {
+    const config = await db.getConfigurationByCode(configCode);
+    if (!config) {
+        throw createError('未找到配置', 404);
+    }
+
+    const rules = await db.listNotificationRules(configCode);
+    return {
+        config: {
+            code: config.code,
+            corpid: config.corpid,
+            agentid: config.agentid,
+            touser: normalizeTouser(config.touser),
+            description: config.description
+        },
+        rules: rules.map(serializeRule)
+    };
+}
+
+async function listConfigurations() {
+    const rows = await db.listConfigurations();
+    return {
+        configurations: rows.map(row => ({
+            code: row.code,
+            agentid: Number(row.agentid) || 0,
+            description: row.description || '',
+            completed: Boolean(row.encrypted_corpsecret || Number(row.agentid)) && normalizeTouser(row.touser).length > 0,
+            created_at: row.created_at
+        }))
+    };
+}
+
+async function createRule(configCode, payload) {
+    const config = await db.getConfigurationByCode(configCode);
+    if (!config) {
+        throw createError('未找到配置', 404);
+    }
+
+    const normalized = normalizeRulePayload(payload);
+    const api_code = uuidv4();
+    const saved = await db.saveNotificationRule({
+        config_code: configCode,
+        api_code,
+        ...normalized
+    });
+
+    clearRuntimeCaches();
+    return {
+        id: saved.id,
+        api_code,
+        apiUrl: `/api/notify/${api_code}`
+    };
+}
+
+async function updateRule(id, payload) {
+    const existing = await db.getNotificationRuleById(id);
+    if (!existing) {
+        throw createError('未找到规则', 404);
+    }
+
+    const normalized = normalizeRulePayload(payload, existing);
+    await db.updateNotificationRule({
+        id: Number(id),
+        ...normalized
+    });
+
+    clearRuntimeCaches();
+    return {
+        id: Number(id),
+        api_code: existing.api_code,
+        apiUrl: `/api/notify/${existing.api_code}`
+    };
+}
+
+async function regenerateRuleApiCode(id) {
+    const existing = await db.getNotificationRuleById(id);
+    if (!existing) {
+        throw createError('未找到规则', 404);
+    }
+
+    const api_code = uuidv4();
+    await db.regenerateNotificationRuleApiCode(Number(id), api_code);
+    clearRuntimeCaches();
+    return {
+        id: Number(id),
+        api_code,
+        apiUrl: `/api/notify/${api_code}`
+    };
+}
+
+async function deleteRule(id) {
+    const existing = await db.getNotificationRuleById(id);
+    if (!existing) {
+        throw createError('未找到规则', 404);
+    }
+
+    await db.deleteNotificationRule(Number(id));
+    clearRuntimeCaches();
+    return { id: Number(id) };
+}
+
+async function resolveNotificationTarget(code) {
+    const cached = getCached(targetCache, code);
+    if (cached) return cached;
+
+    const rule = await db.getNotificationRuleByApiCode(code);
+    if (rule) {
+        const config = await db.getConfigurationByCode(rule.config_code);
+        if (!config) {
+            throw createError('规则关联的配置不存在', 404);
+        }
+
+        const recipient = recipientFromRule(rule);
+        const target = {
+            config,
+            rule,
+            recipient,
+            estimatedCount: estimateRecipientCount(recipient, rule.estimated_count),
+            cacheScope: `rule:${rule.id}:${rule.api_code}`
+        };
+        return setCached(targetCache, code, target, CONFIG_CACHE_TTL_MS);
+    }
+
+    const config = await db.getConfigurationByCode(code);
+    if (!config) {
+        throw createError('无效的code，未找到配置', 404);
+    }
+
+    const recipient = recipientFromConfig(config);
+    const target = {
+        config,
+        rule: null,
+        recipient,
+        estimatedCount: estimateRecipientCount(recipient),
+        cacheScope: `config:${config.code}`
+    };
+    return setCached(targetCache, code, target, CONFIG_CACHE_TTL_MS);
+}
+
+function buildSendCacheKey(target, title, content, options) {
+    return stableStringify({
+        scope: target.cacheScope,
+        recipient: target.recipient,
+        title,
+        content,
+        msgType: options.msgType,
+        mediaId: options.mediaId,
+        url: options.url,
+        btntxt: options.btntxt,
+        articles: options.articles,
+        safe: options.safe
+    });
+}
+
 /**
  * 发送通知
  * @param {string} code - 唯一配置code
@@ -213,61 +600,81 @@ async function sendNotification(code, title, content, options = {}) {
         url,
         btntxt,
         articles,
-        safe = 0
+        safe = 0,
+        force = false
     } = options;
 
-    const config = await db.getConfigurationByCode(code);
-    if (!config) {
-        throw new Error('无效的code，未找到配置');
+    const target = await resolveNotificationTarget(code);
+    const config = target.config;
+    const sendOptions = { msgType, mediaId, url, btntxt, articles, safe };
+    const cacheKey = buildSendCacheKey(target, title, content, sendOptions);
+    if (!force) {
+        const cachedResult = getCached(sendResultCache, cacheKey);
+        if (cachedResult) {
+            return { ...cachedResult, cached: true };
+        }
     }
-    
+
+    assertNotInBackoff(config);
+    trackAppDaily(config, target.estimatedCount);
+    trackExplicitMembers(config, target.recipient);
+
     const corpsecret = crypto.decrypt(config.encrypted_corpsecret);
     const accessToken = await wechat.getToken(config.corpid, corpsecret);
 
     let result;
-    switch (msgType) {
-        case 'text':
-            const message = title ? `${title}\n${content}` : content;
-            result = await wechat.sendTextMessage(accessToken, config.agentid, config.touser, message, safe);
-            break;
-            
-        case 'markdown':
-            const markdownContent = title ? `**${title}**\n\n${content}` : content;
-            result = await wechat.sendMarkdownMessage(accessToken, config.agentid, config.touser, markdownContent, safe);
-            break;
-            
-        case 'image':
-            if (!mediaId) {
-                throw new Error('图片消息需要提供media_id');
-            }
-            result = await wechat.sendImageMessage(accessToken, config.agentid, config.touser, mediaId, safe);
-            break;
-            
-        case 'file':
-            if (!mediaId) {
-                throw new Error('文件消息需要提供media_id');
-            }
-            result = await wechat.sendFileMessage(accessToken, config.agentid, config.touser, mediaId, safe);
-            break;
-            
-        case 'textcard':
-            if (!title || !content || !url) {
-                throw new Error('文本卡片消息需要提供title、content和url');
-            }
-            result = await wechat.sendTextCardMessage(accessToken, config.agentid, config.touser, title, content, url, btntxt, safe);
-            break;
-            
-        case 'news':
-            if (!articles || !Array.isArray(articles) || articles.length === 0) {
-                throw new Error('图文消息需要提供articles数组');
-            }
-            result = await wechat.sendNewsMessage(accessToken, config.agentid, config.touser, articles, safe);
-            break;
-            
-        default:
-            throw new Error(`不支持的消息类型: ${msgType}`);
+    try {
+        switch (msgType) {
+            case 'text':
+                const message = title ? `${title}\n${content}` : content;
+                result = await wechat.sendTextMessage(accessToken, config.agentid, target.recipient, message, safe);
+                break;
+
+            case 'markdown':
+                const markdownContent = title ? `**${title}**\n\n${content}` : content;
+                result = await wechat.sendMarkdownMessage(accessToken, config.agentid, target.recipient, markdownContent, safe);
+                break;
+
+            case 'image':
+                if (!mediaId) {
+                    throw new Error('图片消息需要提供media_id');
+                }
+                result = await wechat.sendImageMessage(accessToken, config.agentid, target.recipient, mediaId, safe);
+                break;
+
+            case 'file':
+                if (!mediaId) {
+                    throw new Error('文件消息需要提供media_id');
+                }
+                result = await wechat.sendFileMessage(accessToken, config.agentid, target.recipient, mediaId, safe);
+                break;
+
+            case 'textcard':
+                if (!title || !content || !url) {
+                    throw new Error('文本卡片消息需要提供title、content和url');
+                }
+                result = await wechat.sendTextCardMessage(accessToken, config.agentid, target.recipient, title, content, url, btntxt, safe);
+                break;
+
+            case 'news':
+                if (!articles || !Array.isArray(articles) || articles.length === 0) {
+                    throw new Error('图文消息需要提供articles数组');
+                }
+                result = await wechat.sendNewsMessage(accessToken, config.agentid, target.recipient, articles, safe);
+                break;
+
+            default:
+                throw new Error(`不支持的消息类型: ${msgType}`);
+        }
+    } catch (err) {
+        if ((err.message || '').includes('45009')) {
+            enterBackoff(config);
+            err.statusCode = 429;
+        }
+        throw err;
     }
-    
+
+    setCached(sendResultCache, cacheKey, result, SEND_DEDUP_TTL_MS);
     return result;
 }
 
@@ -276,7 +683,7 @@ async function sendNotification(code, title, content, options = {}) {
  * @param {string} code - 唯一配置code
  * @returns {Promise<Object>} - 配置信息
  */
-async function getConfigMembers(code) {
+async function getConfigMembers(code, options = {}) {
     if (!code) {
         throw createError('\u65e0\u6548\u7684code\uff0c\u672a\u627e\u5230\u914d\u7f6e', 404);
     }
@@ -291,21 +698,42 @@ async function getConfigMembers(code) {
         throw createError('\u914d\u7f6e\u5c1a\u672a\u5b8c\u6210\uff0c\u8bf7\u5148\u5b8c\u6210\u7b2c\u4e8c\u6b65\u914d\u7f6e', 400);
     }
 
-    const corpsecret = crypto.decrypt(config.encrypted_corpsecret);
-    const accessToken = await wechat.getToken(config.corpid, corpsecret);
-    const users = await wechat.getDepartmentUsers(accessToken);
-    const visibleUserids = new Set(users.map(user => user.userid).filter(Boolean));
+    const cacheKey = `${config.corpid}:${config.agentid}`;
+    let memberData = options.refresh ? null : getCached(memberListCache, cacheKey);
+    if (Array.isArray(memberData)) {
+        memberData = { users: memberData, warning: '' };
+    }
+
+    if (!memberData) {
+        try {
+            const corpsecret = crypto.decrypt(config.encrypted_corpsecret);
+            const accessToken = await wechat.getToken(config.corpid, corpsecret);
+            const agentInfo = await wechat.getAgentInfo(accessToken, config.agentid);
+            memberData = {
+                users: await wechat.getAgentVisibleUsers(accessToken, agentInfo),
+                warning: ''
+            };
+        } catch (err) {
+            if (!isContactPrivilegeError(err)) throw err;
+            memberData = {
+                users: fallbackMembersFromCurrent(current),
+                warning: '企业微信未授权读取通讯录，已仅显示当前配置中的 UserID。'
+            };
+        }
+        setCached(memberListCache, cacheKey, memberData, MEMBER_CACHE_TTL_MS);
+    }
+
+    const users = Array.isArray(memberData.users) ? memberData.users : [];
+    const formattedUsers = users
+        .map(formatMemberForResponse)
+        .filter(Boolean);
+    const visibleUserids = new Set(formattedUsers.map(user => user.userid));
 
     return {
-        users: users
-            .filter(user => user.userid)
-            .map(user => ({
-                userid: user.userid,
-                name: user.name || user.userid,
-                displayName: user.name || user.userid
-            })),
+        users: formattedUsers,
         current,
-        orphan: current.filter(userid => !visibleUserids.has(userid))
+        orphan: current.filter(userid => !visibleUserids.has(userid)),
+        ...(memberData.warning ? { warning: memberData.warning } : {})
     };
 }
 
@@ -382,6 +810,7 @@ async function updateConfiguration(code, newConfig) {
         encrypted_encoding_aes_key,
         callback_enabled: newConfig.callback_enabled !== undefined ? (newConfig.callback_enabled ? 1 : 0) : config.callback_enabled
     });
+    clearRuntimeCaches();
 
     const result = { message: '配置更新成功', code };
     if (newConfig.callback_enabled || config.callback_enabled) {
@@ -487,6 +916,12 @@ module.exports = {
     createCallbackConfiguration,
     completeConfiguration,
     createConfiguration,
+    listRules,
+    listConfigurations,
+    createRule,
+    updateRule,
+    regenerateRuleApiCode,
+    deleteRule,
     sendNotification,
     getConfigMembers,
     getConfiguration,

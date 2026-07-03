@@ -2,17 +2,17 @@
 REM =====================================================================
 REM 企业微信通知转发服务 - 构建镜像并打包脚本（Windows / 本机构建机）
 REM
-REM 用途：在开发机/构建机上执行，生成 qywx-notifier:1.0.0 镜像
-REM       并打包为 qywx-notifier-1.0.0.tar.gz，供 1Panel 服务器导入。
+REM 用途：在开发机/构建机上执行，生成 qywx-notifier-plus:1.0.0 镜像
+REM       并打包为 qywx-notifier-plus-1.0.0.tar.gz，供 1Panel 服务器导入。
 REM
 REM 用法：双击运行，或在命令行执行  build-and-pack.bat
 REM =====================================================================
 setlocal enabledelayedexpansion
 
 REM ---- 镜像信息（如改版本号请同步修改 docker-compose.yml 与导入脚本）----
-set IMAGE_NAME=qywx-notifier
+set IMAGE_NAME=qywx-notifier-plus
 set IMAGE_TAG=1.0.0
-set ARCHIVE_NAME=qywx-notifier-%IMAGE_TAG%.tar.gz
+set ARCHIVE_NAME=qywx-notifier-plus-%IMAGE_TAG%.tar.gz
 
 cd /d "%~dp0\.."
 

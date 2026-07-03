@@ -139,8 +139,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const corpid = callbackForm.corpid.value.trim(); // 从第一步获取
         const corpsecret = configForm.corpsecret.value.trim();
-        if (!corpid || !corpsecret) {
-            showError('请填写CorpSecret');
+        const agentid = configForm.agentid.value.trim();
+        if (!corpid || !corpsecret || !agentid) {
+            showError('请填写CorpSecret和AgentID');
             return;
         }
         validateBtn.disabled = true;
@@ -149,13 +150,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const res = await fetch('/api/validate', {
                 method: 'POST',
                 headers: getAuthHeaders(),
-                body: JSON.stringify({ corpid, corpsecret })
+                body: JSON.stringify({ corpid, corpsecret, agentid: Number(agentid) })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || '验证失败');
             usersCache = data.users || [];
             if (usersCache.length === 0) {
-                showError('未获取到任何成员');
+                showError('未获取到任何成员，请检查该应用的可见范围是否包含成员、部门或标签');
                 return;
             }
             userList.innerHTML = usersCache.map(user =>
@@ -322,6 +323,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         <p><span class="font-medium">创建时间:</span> ${escapeHtml(createdAt)}</p>
                     </div>
                     <div class="card-actions justify-end mt-4">
+                        <a class="btn btn-secondary btn-sm" href="/rules?code=${safeCode}">
+                            <i data-lucide="route" class="h-4 w-4"></i>
+                            接收规则
+                        </a>
                         <button class="btn btn-primary btn-sm" id="edit-config-btn" data-code="${safeCode}">
                             <i data-lucide="edit" class="h-4 w-4"></i>
                             编辑配置
@@ -450,6 +455,9 @@ document.addEventListener('DOMContentLoaded', function () {
             editCurrent = normalizeTouser(data.current);
             editOrphan = normalizeTouser(data.orphan);
             editCode = code;
+            if (data.warning) {
+                showToast(data.warning);
+            }
 
             const visibleUserids = new Set(editUsersCache.map(user => String(user.userid)));
             editSelectedUserids = new Set(editCurrent.filter(userid => visibleUserids.has(userid)));

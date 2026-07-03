@@ -463,6 +463,32 @@ async function run(name, fn) {
 }
 
 (async () => {
+    await run('second-step validation sends AgentID with corp credentials', async () => {
+        let validateBody = null;
+        const app = await createApp(async (url, options) => {
+            if (url === '/api/validate') {
+                validateBody = JSON.parse(options.body);
+                return createResponse(true, {
+                    agentid: 100001,
+                    users: [{ userid: 'alice', name: 'Alice' }]
+                });
+            }
+            throw new Error(`unexpected fetch ${url}`);
+        });
+
+        app.document.getElementById('callbackForm').corpid.value = 'corp-1';
+        app.document.getElementById('configForm').corpsecret.value = 'secret-1';
+        app.document.getElementById('configForm').agentid.value = '100001';
+        await app.click('validateBtn');
+
+        assert.deepStrictEqual(validateBody, {
+            corpid: 'corp-1',
+            corpsecret: 'secret-1',
+            agentid: 100001
+        });
+        assert(!app.document.getElementById('userListSection').classList.contains('hidden'), 'member list should be visible');
+    });
+
     await run('completed edit fetches members with Authorization', async () => {
         const app = await createApp(standardRoutes());
         await app.lookup('cfg1');

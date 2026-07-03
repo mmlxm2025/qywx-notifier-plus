@@ -2,7 +2,7 @@
 # 企业微信通知转发服务 - 1Panel 编排文件
 #
 # 说明：
-#   - 此文件直接引用本地已导入的镜像 qywx-notifier:1.0.0
+#   - 此文件直接引用 GHCR 镜像 ghcr.io/mmlxm2025/qywx-notifier-plus:latest
 #     （由 docker load 导入，见 deploy/import-load.sh）
 #     因此 1Panel 服务器【无需源码、无需联网构建】。
 #   - 所有敏感配置（加密密钥、管理员密码）通过 .env 文件注入，
@@ -11,10 +11,9 @@
 # =====================================================================
 
 services:
-  wechat-notifier:
-    # 引用本地已导入的镜像（不要改成 build:）
-    image: qywx-notifier:1.0.0
-    container_name: wechat-notifier
+  qywx-notifier-plus:
+    image: ${IMAGE:-ghcr.io/mmlxm2025/qywx-notifier-plus:latest}
+    container_name: qywx-notifier-plus
     restart: unless-stopped
 
     # 端口映射：宿主机端口:容器端口
@@ -24,7 +23,7 @@ services:
 
     # 数据持久化：把容器内 /app/database 挂到 Docker 命名卷
     volumes:
-      - wechat-notifier-data:/app/database
+      - qywx-notifier-plus-data:/app/database
 
     # 运行时配置（值来自同目录 .env 文件）
     environment:
@@ -46,5 +45,5 @@ services:
 
 # 命名卷：由 Docker / 1Panel 自动管理存储位置
 volumes:
-  wechat-notifier-data:
-    name: wechat-notifier-data
+  qywx-notifier-plus-data:
+    name: qywx-notifier-plus-data

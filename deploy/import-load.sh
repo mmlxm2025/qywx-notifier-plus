@@ -10,7 +10,7 @@
 # =====================================================================
 set -euo pipefail
 
-IMAGE_NAME="qywx-notifier"
+IMAGE_NAME="qywx-notifier-plus"
 IMAGE_TAG="1.0.0"
 ARCHIVE_NAME="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 
@@ -32,6 +32,7 @@ if [ ! -f "$ARCHIVE_NAME" ]; then
 fi
 gunzip -c "$ARCHIVE_NAME" | docker load
 docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:${IMAGE_TAG}" 2>/dev/null || true
+export IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 echo "已导入镜像："
 docker images "${IMAGE_NAME}:${IMAGE_TAG}"
 

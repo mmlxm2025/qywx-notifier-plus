@@ -19,14 +19,16 @@ function replaceForTest(t, object, property, value) {
     });
 }
 
-function patchNotifierDependencies(t, { config, duplicate = null } = {}) {
+function patchNotifierDependencies(t, { config, duplicate = null, memberError = null } = {}) {
     const Database = require('../src/core/database');
     const CryptoService = require('../src/core/crypto');
     const WeChatService = require('../src/core/wechat');
 
     const calls = {
         duplicateLookup: null,
-        updatedConfig: null
+        updatedConfig: null,
+        agentInfo: null,
+        visibleUsers: null
     };
 
     replaceForTest(t, Database.prototype, 'init', async function init() {});
@@ -56,7 +58,13 @@ function patchNotifierDependencies(t, { config, duplicate = null } = {}) {
         assert.equal(corpsecret, 'plain-secret');
         return 'access-token';
     });
-    replaceForTest(t, WeChatService.prototype, 'getDepartmentUsers', async function getDepartmentUsers(accessToken) {
+    replaceForTest(t, WeChatService.prototype, 'getAgentInfo', async function getAgentInfo(accessToken, agentid) {
+        calls.agentInfo = { accessToken, agentid };
+        return { agentid, name: '告警应用' };
+    });
+    replaceForTest(t, WeChatService.prototype, 'getAgentVisibleUsers', async function getAgentVisibleUsers(accessToken, agentInfo) {
+        calls.visibleUsers = { accessToken, agentInfo };
+        if (memberError) throw memberError;
         assert.equal(accessToken, 'access-token');
         return [
             { userid: 'alice', name: 'Alice', mobile: 'hidden' },
@@ -196,12 +204,112 @@ test('WeChatService.getDepartmentUsers throws formatted error when WeChat return
     );
 });
 
+test('WeChatService.getAgentInfo calls agent/get with AgentID', async t => {
+    const axios = require('axios');
+    const originalGet = axios.get;
+    t.after(() => {
+        axios.get = originalGet;
+    });
+
+    let call;
+    axios.get = async (url, options) => {
+        call = { url, options };
+        return {
+            data: {
+                errcode: 0,
+                agentid: 100001,
+                name: '告警应用'
+            }
+        };
+    };
+
+    const WeChatService = require('../src/core/wechat');
+    const wechat = new WeChatService('https://qyapi.example');
+
+    assert.equal(typeof wechat.getAgentInfo, 'function');
+    const result = await wechat.getAgentInfo('token-1', 100001);
+
+    assert.deepEqual(result, {
+        errcode: 0,
+        agentid: 100001,
+        name: '告警应用'
+    });
+    assert.equal(call.url, 'https://qyapi.example/cgi-bin/agent/get');
+    assert.deepEqual(call.options.params, {
+        access_token: 'token-1',
+        agentid: 100001
+    });
+});
+
+test('WeChatService.getAgentVisibleUsers includes explicit app visible users when departments are empty', async t => {
+    const WeChatService = require('../src/core/wechat');
+    const wechat = new WeChatService('https://qyapi.example');
+
+    replaceForTest(t, wechat, 'getDepartmentUsers', async function getDepartmentUsers() {
+        throw new Error('department users should not be fetched without visible departments');
+    });
+
+    assert.equal(typeof wechat.getAgentVisibleUsers, 'function');
+    const users = await wechat.getAgentVisibleUsers('token-1', {
+        allow_userinfos: {
+            user: [{ userid: 'alice' }, { userid: 'bob' }, { userid: 'alice' }]
+        },
+        allow_partys: { partyid: [] },
+        allow_tags: { tagid: [] }
+    });
+
+    assert.deepEqual(users, [
+        { userid: 'alice', name: 'alice' },
+        { userid: 'bob', name: 'bob' }
+    ]);
+});
+
+test('WeChatService.getAgentVisibleUsers merges app visible users, departments, and tags', async t => {
+    const WeChatService = require('../src/core/wechat');
+    const wechat = new WeChatService('https://qyapi.example');
+
+    const calls = { departments: [], tags: [] };
+    replaceForTest(t, wechat, 'getDepartmentUsers', async function getDepartmentUsers(accessToken, departmentId) {
+        calls.departments.push({ accessToken, departmentId });
+        return [
+            { userid: 'dept-user', name: 'Dept User' },
+            { userid: 'alice', name: 'Alice From Dept' }
+        ];
+    });
+    replaceForTest(t, wechat, 'getTagUsers', async function getTagUsers(accessToken, tagId) {
+        calls.tags.push({ accessToken, tagId });
+        return [
+            { userid: 'tag-user', name: 'Tag User' },
+            { userid: 'dept-user', name: 'Dept User Duplicate' }
+        ];
+    });
+
+    const users = await wechat.getAgentVisibleUsers('token-1', {
+        allow_userinfos: { user: [{ userid: 'alice' }] },
+        allow_partys: { partyid: [7] },
+        allow_tags: { tagid: [9] }
+    });
+
+    assert.deepEqual(calls.departments, [{ accessToken: 'token-1', departmentId: 7 }]);
+    assert.deepEqual(calls.tags, [{ accessToken: 'token-1', tagId: 9 }]);
+    assert.deepEqual(users, [
+        { userid: 'alice', name: 'alice' },
+        { userid: 'dept-user', name: 'Dept User' },
+        { userid: 'tag-user', name: 'Tag User' }
+    ]);
+});
+
 test('notifier.getConfigMembers returns sanitized users, current, and orphan ids', async t => {
-    const { notifier } = patchNotifierDependencies(t, { config: completedConfig() });
+    const { notifier, calls } = patchNotifierDependencies(t, { config: completedConfig() });
 
     assert.equal(typeof notifier.getConfigMembers, 'function');
     const result = await notifier.getConfigMembers('code-1');
 
+    assert.deepEqual(calls.agentInfo, { accessToken: 'access-token', agentid: 100001 });
+    assert.deepEqual(calls.visibleUsers, {
+        accessToken: 'access-token',
+        agentInfo: { agentid: 100001, name: '告警应用' }
+    });
     assert.deepEqual(result, {
         users: [
             { userid: 'alice', name: 'Alice', displayName: 'Alice' },
@@ -209,6 +317,26 @@ test('notifier.getConfigMembers returns sanitized users, current, and orphan ids
         ],
         current: ['alice', 'missing'],
         orphan: ['missing']
+    });
+});
+
+test('notifier.getConfigMembers falls back to configured users when WeChat denies contact access', async t => {
+    const memberError = new Error('获取成员列表失败: no privilege to access/modify contact/party/agent (错误码: 60011)');
+    const { notifier } = patchNotifierDependencies(t, {
+        config: completedConfig({ touser: 'alice|missing' }),
+        memberError
+    });
+
+    const result = await notifier.getConfigMembers('code-1', { refresh: true });
+
+    assert.deepEqual(result, {
+        users: [
+            { userid: 'alice', name: 'alice', displayName: 'alice' },
+            { userid: 'missing', name: 'missing', displayName: 'missing' }
+        ],
+        current: ['alice', 'missing'],
+        orphan: [],
+        warning: '企业微信未授权读取通讯录，已仅显示当前配置中的 UserID。'
     });
 });
 
@@ -302,6 +430,62 @@ test('GET /api/configuration/:code/users requires auth route and returns members
         current: ['alice'],
         orphan: []
     });
+});
+
+test('POST /api/validate requires AgentID and validates the selected app before listing members', async t => {
+    patchNotifierDependencies(t, { config: completedConfig() });
+    const WeChatService = require('../src/core/wechat');
+    const calls = {};
+
+    replaceForTest(t, WeChatService.prototype, 'getToken', async function getToken(corpid, corpsecret) {
+        calls.token = { corpid, corpsecret };
+        return 'access-token';
+    });
+    const agentInfo = { agentid: 100001, name: '告警应用' };
+    replaceForTest(t, WeChatService.prototype, 'getAgentInfo', async function getAgentInfo(accessToken, agentid) {
+        calls.agent = { accessToken, agentid };
+        return agentInfo;
+    });
+    replaceForTest(t, WeChatService.prototype, 'getAgentVisibleUsers', async function getAgentVisibleUsers(accessToken, receivedAgentInfo) {
+        calls.members = { accessToken, agentInfo: receivedAgentInfo };
+        return [{ userid: 'alice', name: 'Alice' }];
+    });
+
+    const app = buildApp(t);
+    const res = await request(app, 'POST', '/api/validate', {
+        corpid: 'corp-1',
+        corpsecret: 'secret-1',
+        agentid: 100001
+    });
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(calls.token, { corpid: 'corp-1', corpsecret: 'secret-1' });
+    assert.deepEqual(calls.agent, { accessToken: 'access-token', agentid: 100001 });
+    assert.deepEqual(calls.members, { accessToken: 'access-token', agentInfo });
+    assert.deepEqual(JSON.parse(res.body), {
+        agentid: 100001,
+        users: [{ userid: 'alice', name: 'Alice' }]
+    });
+});
+
+test('POST /api/validate rejects missing AgentID before calling WeChat', async t => {
+    patchNotifierDependencies(t, { config: completedConfig() });
+    const WeChatService = require('../src/core/wechat');
+    let called = false;
+    replaceForTest(t, WeChatService.prototype, 'getToken', async function getToken() {
+        called = true;
+        return 'access-token';
+    });
+
+    const app = buildApp(t);
+    const res = await request(app, 'POST', '/api/validate', {
+        corpid: 'corp-1',
+        corpsecret: 'secret-1'
+    });
+
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /AgentID/);
+    assert.equal(called, false);
 });
 
 test('GET /api/configuration/:code/users returns 401 when unauthenticated', async t => {

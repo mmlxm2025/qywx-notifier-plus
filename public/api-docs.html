@@ -314,6 +314,118 @@
                 </div>
             </section>
 
+            <!-- 接收规则 API -->
+            <section>
+                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                    <i data-lucide="route" class="h-6 w-6"></i>
+                    接收规则 API
+                </h2>
+                <div class="bg-base-100 p-6 rounded-lg shadow-sm space-y-6">
+                    <div>
+                        <h3 class="font-medium mb-2 text-lg">管理规则</h3>
+                        <div class="overflow-x-auto">
+                            <table class="table table-zebra w-full">
+                                <thead>
+                                    <tr>
+                                        <th>接口</th>
+                                        <th>方法</th>
+                                        <th>说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="font-mono">/api/configurations</td>
+                                        <td>GET</td>
+                                        <td>获取可选择的基础配置 Code 列表，供规则页下拉选择</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">/api/configuration/{code}/rules</td>
+                                        <td>GET</td>
+                                        <td>获取某个基础配置下的规则列表</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">/api/configuration/{code}/rules</td>
+                                        <td>POST</td>
+                                        <td>创建规则并生成独立通知 API</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">/api/rules/{id}</td>
+                                        <td>PUT</td>
+                                        <td>修改规则名称和接收范围</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">/api/rules/{id}/regenerate</td>
+                                        <td>POST</td>
+                                        <td>重新生成规则 API，旧地址立即失效</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-mono">/api/rules/{id}</td>
+                                        <td>DELETE</td>
+                                        <td>删除规则</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="font-medium mb-2 text-lg">配置列表响应</h3>
+                        <div class="bg-base-200 p-3 rounded-md">
+<pre class="text-sm">{
+  "configurations": [
+    {
+      "code": "abc123",
+      "agentid": 1000002,
+      "description": "生产告警",
+      "completed": true,
+      "created_at": "2026-06-26 12:00:00"
+    }
+  ]
+}</pre>
+                        </div>
+                        <p class="text-sm text-base-content/70 mt-2">规则配置页仅自动选择已完成的配置；未完成配置会显示在列表中，但需要先回到首页补全应用信息和接收人。</p>
+                    </div>
+
+                    <div>
+                        <h3 class="font-medium mb-2 text-lg">规则请求体</h3>
+                        <div class="bg-base-200 p-3 rounded-md">
+<pre class="text-sm">{
+  "name": "运维值班",
+  "is_all": false,
+  "touser": ["zhangsan", "lisi"],
+  "toparty": "2|3",
+  "totag": "9",
+  "estimated_count": 2
+}</pre>
+                        </div>
+                        <p class="text-sm text-base-content/70 mt-2">当 <code>is_all</code> 为 true 时，系统会按企业微信官方规则发送 <code>touser="@all"</code>，并忽略 <code>touser/toparty/totag</code>。不创建规则时，原有 <code>/api/notify/{code}</code> 仍按基础配置发送。</p>
+                    </div>
+
+                    <div>
+                        <h3 class="font-medium mb-2 text-lg">自定义通知 API</h3>
+                        <div class="bg-base-200 p-3 rounded-md">
+<pre class="text-sm">curl -X POST "http://your-server.com/api/notify/rule-api-code" \
+-H "Content-Type: application/json" \
+-d '{
+  "title": "告警通知",
+  "content": "磁盘使用率超过 90%"
+}'</pre>
+                        </div>
+                        <p class="text-sm text-base-content/70 mt-2">规则 API 与基础通知 API 的请求体一致。短时间内完全相同的消息会返回缓存结果并带有 <code>response.cached=true</code>；如需强制发送，可传 <code>"force": true</code>。</p>
+                    </div>
+
+                    <div>
+                        <h3 class="font-medium mb-2 text-lg">缓存与限频</h3>
+                        <ul class="list-disc pl-5 text-sm text-base-content/80 space-y-1">
+                            <li><code>access_token</code> 继续按企业微信返回的 <code>expires_in</code> 缓存，并提前 5 分钟过期。</li>
+                            <li>规则/配置解析默认缓存 60 秒，成员列表默认缓存 5 分钟，成员刷新接口可用 <code>?refresh=1</code> 强制重拉。</li>
+                            <li>显式成员发送会做本地保护：每成员每分钟 30 次、每小时 1000 次；触发后返回 HTTP 429。</li>
+                            <li>企业微信返回 45009 等限频错误时，当前应用会进入短暂退避保护，后续请求返回 HTTP 429。</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
             <!-- 集成示例 -->
             <section>
                 <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">

@@ -40,7 +40,20 @@ class Database {
     // 创建数据表
     async createTables() {
         return new Promise((resolve, reject) => {
-            const createTableSQL = `
+            let settled = false;
+            const fail = (label, err) => {
+                if (settled) return;
+                settled = true;
+                console.error(`${label}:`, err.message);
+                reject(err);
+            };
+            const done = () => {
+                if (settled) return;
+                settled = true;
+                console.log('数据表创建成功');
+                resolve();
+            };
+            const createConfigurationsSQL = `
                 CREATE TABLE IF NOT EXISTS configurations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     code TEXT UNIQUE NOT NULL,
@@ -56,15 +69,53 @@ class Database {
                     UNIQUE(corpid, agentid, touser)
                 )
             `;
+            const createRulesSQL = `
+                CREATE TABLE IF NOT EXISTS notification_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    config_code TEXT NOT NULL,
+                    api_code TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    touser TEXT DEFAULT '',
+                    toparty TEXT DEFAULT '',
+                    totag TEXT DEFAULT '',
+                    is_all INTEGER DEFAULT 0,
+                    estimated_count INTEGER DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `;
+            const createConfigIndexSQL = `
+                CREATE INDEX IF NOT EXISTS idx_notification_rules_config_code
+                ON notification_rules(config_code)
+            `;
+            const createApiCodeIndexSQL = `
+                CREATE INDEX IF NOT EXISTS idx_notification_rules_api_code
+                ON notification_rules(api_code)
+            `;
 
-            this.db.run(createTableSQL, (err) => {
-                if (err) {
-                    console.error('创建表失败:', err.message);
-                    reject(err);
-                    return;
-                }
-                console.log('数据表创建成功');
-                resolve();
+            this.db.serialize(() => {
+                this.db.run(createConfigurationsSQL, (err) => {
+                    if (err) {
+                        fail('创建configurations表失败', err);
+                    }
+                });
+                this.db.run(createRulesSQL, (err) => {
+                    if (err) {
+                        fail('创建notification_rules表失败', err);
+                    }
+                });
+                this.db.run(createConfigIndexSQL, (err) => {
+                    if (err) {
+                        fail('创建规则配置索引失败', err);
+                    }
+                });
+                this.db.run(createApiCodeIndexSQL, (err) => {
+                    if (err) {
+                        fail('创建规则API索引失败', err);
+                        return;
+                    }
+                    done();
+                });
             });
         });
     }
@@ -111,6 +162,24 @@ class Database {
                     return;
                 }
                 resolve(row);
+            });
+        });
+    }
+
+    async listConfigurations() {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT code, agentid, touser, description, created_at
+                FROM configurations
+                ORDER BY id DESC
+            `;
+            this.db.all(sql, [], (err, rows) => {
+                if (err) {
+                    console.error('查询配置列表失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve(rows || []);
             });
         });
     }
@@ -230,6 +299,135 @@ class Database {
                 }
                 console.log('配置完善成功, code:', code);
                 resolve({ code });
+            });
+        });
+    }
+
+    async listNotificationRules(configCode) {
+        return new Promise((resolve, reject) => {
+            const sql = `SELECT * FROM notification_rules WHERE config_code = ? ORDER BY id DESC`;
+            this.db.all(sql, [configCode], (err, rows) => {
+                if (err) {
+                    console.error('查询通知规则失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+    }
+
+    async getNotificationRuleByApiCode(apiCode) {
+        return new Promise((resolve, reject) => {
+            const sql = `SELECT * FROM notification_rules WHERE api_code = ?`;
+            this.db.get(sql, [apiCode], (err, row) => {
+                if (err) {
+                    console.error('按API code查询通知规则失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve(row);
+            });
+        });
+    }
+
+    async getNotificationRuleById(id) {
+        return new Promise((resolve, reject) => {
+            const sql = `SELECT * FROM notification_rules WHERE id = ?`;
+            this.db.get(sql, [id], (err, row) => {
+                if (err) {
+                    console.error('按ID查询通知规则失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve(row);
+            });
+        });
+    }
+
+    async saveNotificationRule(rule) {
+        return new Promise((resolve, reject) => {
+            const {
+                config_code, api_code, name, touser, toparty, totag,
+                is_all, estimated_count
+            } = rule;
+            const sql = `
+                INSERT INTO notification_rules (
+                    config_code, api_code, name, touser, toparty, totag,
+                    is_all, estimated_count
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+
+            this.db.run(sql, [
+                config_code, api_code, name, touser, toparty, totag,
+                is_all || 0, estimated_count || 1
+            ], function(err) {
+                if (err) {
+                    console.error('保存通知规则失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve({ id: this.lastID, api_code });
+            });
+        });
+    }
+
+    async updateNotificationRule(rule) {
+        return new Promise((resolve, reject) => {
+            const {
+                id, name, touser, toparty, totag, is_all, estimated_count
+            } = rule;
+            const sql = `
+                UPDATE notification_rules
+                SET name = ?, touser = ?, toparty = ?, totag = ?,
+                    is_all = ?, estimated_count = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+
+            this.db.run(sql, [
+                name, touser, toparty, totag,
+                is_all || 0, estimated_count || 1, id
+            ], function(err) {
+                if (err) {
+                    console.error('更新通知规则失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve({ id });
+            });
+        });
+    }
+
+    async regenerateNotificationRuleApiCode(id, apiCode) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                UPDATE notification_rules
+                SET api_code = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+
+            this.db.run(sql, [apiCode, id], function(err) {
+                if (err) {
+                    console.error('重新生成通知规则API失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve({ id, api_code: apiCode });
+            });
+        });
+    }
+
+    async deleteNotificationRule(id) {
+        return new Promise((resolve, reject) => {
+            const sql = `DELETE FROM notification_rules WHERE id = ?`;
+            this.db.run(sql, [id], function(err) {
+                if (err) {
+                    console.error('删除通知规则失败:', err.message);
+                    reject(err);
+                    return;
+                }
+                resolve({ id });
             });
         });
     }

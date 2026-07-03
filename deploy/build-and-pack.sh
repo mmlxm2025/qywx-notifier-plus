@@ -2,13 +2,13 @@
 # =====================================================================
 # 企业微信通知转发服务 - 构建镜像并打包脚本（Linux / macOS / WSL 通用）
 #
-# 用途：生成 qywx-notifier:1.0.0 镜像，并打包为 tar.gz 供 1Panel 导入。
+# 用途：生成 qywx-notifier-plus:1.0.0 镜像，并打包为 tar.gz 供 1Panel 导入。
 # 用法：chmod +x build-and-pack.sh && ./build-and-pack.sh
 # =====================================================================
 set -euo pipefail
 
 # 镜像信息（改版本号请同步 docker-compose.yml 与 import-load.sh）
-IMAGE_NAME="qywx-notifier"
+IMAGE_NAME="qywx-notifier-plus"
 IMAGE_TAG="1.0.0"
 ARCHIVE_NAME="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 

@@ -9,7 +9,7 @@
 # =====================================================================
 
 # ---------- 构建阶段：编译原生依赖（sqlite3 等）----------
-FROM node:18-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 # 安装编译 sqlite3 原生模块所需的工具链（仅构建阶段需要）
 RUN apt-get update \
@@ -32,7 +32,11 @@ RUN npm ci --omit=dev --build-from-source=sqlite3 || \
     npm install --omit=dev --build-from-source=sqlite3
 
 # ---------- 运行阶段：精简最终镜像 ----------
-FROM node:18-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
+
+LABEL org.opencontainers.image.source="https://github.com/mmlxm2025/qywx-notifier-plus" \
+      org.opencontainers.image.title="qywx-notifier-plus" \
+      org.opencontainers.image.description="企业微信通知转发服务"
 
 # 安装最小运行时依赖（sqlite3 动态库等），并清理 apt 缓存
 RUN apt-get update \

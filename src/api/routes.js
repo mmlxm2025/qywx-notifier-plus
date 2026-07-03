@@ -45,6 +45,15 @@ function getUpdateConfigurationStatus(err) {
     return 500;
 }
 
+function getRuleStatus(err) {
+    if (err.statusCode) return err.statusCode;
+
+    const message = err.message || '';
+    if (message.includes('\u672a\u627e\u5230\u914d\u7f6e') || message.includes('\u672a\u627e\u5230\u89c4\u5219')) return 404;
+    if (message.includes('\u63a5\u6536\u8303\u56f4') || message.includes('\u89c4\u5219\u540d\u79f0')) return 400;
+    return 500;
+}
+
 // 1. GET / 返回前端页面
 router.get('/', (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
@@ -54,16 +63,26 @@ router.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../../public/index.html'));
 });
 
+router.get('/rules', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../public/rules.html'));
+});
+
+router.get('/api-docs.html', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../public/api-docs.html'));
+});
+
 // 2. POST /api/validate 验证凭证并获取成员列表
 router.post('/api/validate', requireAuth, async (req, res) => {
-    const { corpid, corpsecret } = req.body;
-    if (!corpid || !corpsecret) {
-        return res.status(400).json({ error: '参数不完整' });
+    const { corpid, corpsecret, agentid } = req.body;
+    const numericAgentid = Number(agentid);
+    if (!corpid || !corpsecret || !Number.isInteger(numericAgentid) || numericAgentid <= 0) {
+        return res.status(400).json({ error: '参数不完整，请填写CorpID、CorpSecret和AgentID' });
     }
     try {
         const accessToken = await wechat.getToken(corpid, corpsecret);
-        const users = await wechat.getAllUsers(accessToken);
-        res.json({ users });
+        const agentInfo = await wechat.getAgentInfo(accessToken, numericAgentid);
+        const users = await wechat.getAgentVisibleUsers(accessToken, agentInfo);
+        res.json({ agentid: numericAgentid, users });
     } catch (err) {
         res.status(400).json({ error: err.message || '凭证无效或API请求失败' });
     }
@@ -132,15 +151,12 @@ router.post('/api/notify/:code', async (req, res) => {
     }
 
     try {
-        const options = { msgType, mediaId, url, btntxt, articles, safe };
+        const options = { msgType, mediaId, url, btntxt, articles, safe, force: req.body.force === true };
         const result = await notifier.sendNotification(code, title, content, options);
         res.json({ message: '发送成功', response: result });
     } catch (err) {
-        if (err.message && err.message.includes('未找到配置')) {
-            res.status(404).json({ error: err.message });
-        } else {
-            res.status(500).json({ error: err.message || '消息发送失败' });
-        }
+        const status = err.statusCode || ((err.message || '').includes('未找到配置') ? 404 : 500);
+        res.status(status).json({ error: err.message || '消息发送失败' });
     }
 });
 
@@ -148,10 +164,69 @@ router.post('/api/notify/:code', async (req, res) => {
 router.get('/api/configuration/:code/users', requireAuth, async (req, res) => {
     const { code } = req.params;
     try {
-        const result = await notifier.getConfigMembers(code);
+        const result = await notifier.getConfigMembers(code, { refresh: req.query.refresh === '1' });
         res.json(result);
     } catch (err) {
         res.status(getConfigurationUsersStatus(err)).json({ error: err.message || '获取成员列表失败' });
+    }
+});
+
+router.get('/api/configurations', requireAuth, async (req, res) => {
+    try {
+        const result = await notifier.listConfigurations();
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message || '获取配置列表失败' });
+    }
+});
+
+router.get('/api/configuration/:code/rules', requireAuth, async (req, res) => {
+    const { code } = req.params;
+    try {
+        const result = await notifier.listRules(code);
+        res.json(result);
+    } catch (err) {
+        res.status(getRuleStatus(err)).json({ error: err.message || '获取规则失败' });
+    }
+});
+
+router.post('/api/configuration/:code/rules', requireAuth, async (req, res) => {
+    const { code } = req.params;
+    try {
+        const result = await notifier.createRule(code, req.body);
+        res.status(201).json(result);
+    } catch (err) {
+        res.status(getRuleStatus(err)).json({ error: err.message || '创建规则失败' });
+    }
+});
+
+router.put('/api/rules/:id', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await notifier.updateRule(id, req.body);
+        res.json(result);
+    } catch (err) {
+        res.status(getRuleStatus(err)).json({ error: err.message || '更新规则失败' });
+    }
+});
+
+router.delete('/api/rules/:id', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await notifier.deleteRule(id);
+        res.json(result);
+    } catch (err) {
+        res.status(getRuleStatus(err)).json({ error: err.message || '删除规则失败' });
+    }
+});
+
+router.post('/api/rules/:id/regenerate', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await notifier.regenerateRuleApiCode(id);
+        res.json(result);
+    } catch (err) {
+        res.status(getRuleStatus(err)).json({ error: err.message || '重新生成API失败' });
     }
 });
 

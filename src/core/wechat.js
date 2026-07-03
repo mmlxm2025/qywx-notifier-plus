@@ -11,6 +11,43 @@ class WeChatService {
         this.tokenCache = new Map(); // 缓存access_token
     }
 
+    formatRecipientField(value) {
+        const values = Array.isArray(value) ? value : [value];
+        const seen = new Set();
+
+        return values
+            .flatMap(item => String(item || '').split(/[|,，;；\s]+/))
+            .map(item => item.trim())
+            .filter(item => {
+                if (!item || seen.has(item)) return false;
+                seen.add(item);
+                return true;
+            })
+            .join('|');
+    }
+
+    buildRecipientFields(recipient) {
+        if (recipient && typeof recipient === 'object' && !Array.isArray(recipient)) {
+            if (recipient.is_all || recipient.isAll) {
+                return { touser: '@all' };
+            }
+
+            const fields = {};
+            const touser = this.formatRecipientField(recipient.touser);
+            const toparty = this.formatRecipientField(recipient.toparty);
+            const totag = this.formatRecipientField(recipient.totag);
+
+            if (touser) fields.touser = touser;
+            if (toparty) fields.toparty = toparty;
+            if (totag) fields.totag = totag;
+            return fields;
+        }
+
+        return {
+            touser: this.formatRecipientField(recipient)
+        };
+    }
+
     // 获取访问凭证
     async getToken(corpid, corpsecret) {
         try {
@@ -116,7 +153,7 @@ class WeChatService {
     async sendTextMessage(accessToken, agentid, touser, content, safe = 0) {
         try {
             const messageBody = {
-                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                ...this.buildRecipientFields(touser),
                 msgtype: 'text',
                 agentid: agentid,
                 text: {
@@ -148,7 +185,7 @@ class WeChatService {
     async sendMarkdownMessage(accessToken, agentid, touser, content, safe = 0) {
         try {
             const messageBody = {
-                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                ...this.buildRecipientFields(touser),
                 msgtype: 'markdown',
                 agentid: agentid,
                 markdown: {
@@ -180,7 +217,7 @@ class WeChatService {
     async sendImageMessage(accessToken, agentid, touser, mediaId, safe = 0) {
         try {
             const messageBody = {
-                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                ...this.buildRecipientFields(touser),
                 msgtype: 'image',
                 agentid: agentid,
                 image: {
@@ -212,7 +249,7 @@ class WeChatService {
     async sendFileMessage(accessToken, agentid, touser, mediaId, safe = 0) {
         try {
             const messageBody = {
-                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                ...this.buildRecipientFields(touser),
                 msgtype: 'file',
                 agentid: agentid,
                 file: {
@@ -244,7 +281,7 @@ class WeChatService {
     async sendTextCardMessage(accessToken, agentid, touser, title, description, url, btntxt = '详情', safe = 0) {
         try {
             const messageBody = {
-                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                ...this.buildRecipientFields(touser),
                 msgtype: 'textcard',
                 agentid: agentid,
                 textcard: {
@@ -279,7 +316,7 @@ class WeChatService {
     async sendNewsMessage(accessToken, agentid, touser, articles, safe = 0) {
         try {
             const messageBody = {
-                touser: Array.isArray(touser) ? touser.join('|') : touser,
+                ...this.buildRecipientFields(touser),
                 msgtype: 'news',
                 agentid: agentid,
                 news: {
@@ -330,6 +367,90 @@ class WeChatService {
             return data.department || [];
         } catch (error) {
             console.error('获取部门列表失败:', error.message);
+            throw error;
+        }
+    }
+
+    // 获取应用详情，用于校验 AgentID 与当前应用凭证是否匹配
+    async getAgentInfo(accessToken, agentid) {
+        try {
+            const response = await axios.get(`${this.apiBase}/cgi-bin/agent/get`, {
+                params: {
+                    access_token: accessToken,
+                    agentid: Number(agentid)
+                }
+            });
+
+            const { data } = response;
+
+            if (data.errcode !== 0) {
+                throw new Error(`获取应用详情失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            return data;
+        } catch (error) {
+            console.error('获取应用详情失败:', error.message);
+            throw error;
+        }
+    }
+
+    addUniqueUser(usersMap, user) {
+        const userid = String(user && user.userid || '').trim();
+        if (!userid || usersMap.has(userid)) return;
+
+        usersMap.set(userid, {
+            userid,
+            name: user.name || userid
+        });
+    }
+
+    // 根据应用可见范围获取成员，避免只查根部门导致成员为空
+    async getAgentVisibleUsers(accessToken, agentInfo) {
+        const usersMap = new Map();
+        const directUsers = agentInfo?.allow_userinfos?.user || [];
+        const partyIds = agentInfo?.allow_partys?.partyid || [];
+        const tagIds = agentInfo?.allow_tags?.tagid || [];
+        const hasVisibleScope = directUsers.length > 0 || partyIds.length > 0 || tagIds.length > 0;
+
+        directUsers.forEach(user => this.addUniqueUser(usersMap, user));
+
+        for (const departmentId of partyIds) {
+            const departmentUsers = await this.getDepartmentUsers(accessToken, departmentId);
+            departmentUsers.forEach(user => this.addUniqueUser(usersMap, user));
+        }
+
+        for (const tagId of tagIds) {
+            const tagUsers = await this.getTagUsers(accessToken, tagId);
+            tagUsers.forEach(user => this.addUniqueUser(usersMap, user));
+        }
+
+        if (!hasVisibleScope) {
+            const users = await this.getDepartmentUsers(accessToken);
+            users.forEach(user => this.addUniqueUser(usersMap, user));
+        }
+
+        return Array.from(usersMap.values());
+    }
+
+    // 获取标签成员
+    async getTagUsers(accessToken, tagId) {
+        try {
+            const response = await axios.get(`${this.apiBase}/cgi-bin/tag/get`, {
+                params: {
+                    access_token: accessToken,
+                    tagid: tagId
+                }
+            });
+
+            const { data } = response;
+
+            if (data.errcode !== 0) {
+                throw new Error(`获取标签成员失败: ${data.errmsg} (错误码: ${data.errcode})`);
+            }
+
+            return data.userlist || [];
+        } catch (error) {
+            console.error('获取标签成员失败:', error.message);
             throw error;
         }
     }

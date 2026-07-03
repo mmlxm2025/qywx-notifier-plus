@@ -1,4 +1,4 @@
-# 企业微信通知转发服务（wechat-notifier）
+# 企业微信通知转发服务（qywx-notifier-plus）
 
 类似 Server 酱的轻量级通知服务，通过企业微信应用消息把告警/通知推送到指定成员，并支持企业微信回调。
 
@@ -24,6 +24,15 @@ public/              # 前端页面
 
 推荐使用 Docker 部署，详见 **[deploy/README-1PANEL.md](deploy/README-1PANEL.md)**。
 
+镜像地址：`ghcr.io/mmlxm2025/qywx-notifier-plus:latest`
+
+```bash
+docker pull ghcr.io/mmlxm2025/qywx-notifier-plus:latest
+docker compose up -d
+```
+
+推送到 `main` 分支或创建 `v*` 标签时，GitHub Actions 会自动运行测试、构建镜像并推送到 GitHub Container Registry。
+
 核心流程：构建镜像 → 打包 tar.gz → 上传到 1Panel 服务器 → 导入镜像 → 创建「编排」。
 
 镜像**不含任何配置 / 密码 / 数据**，所有敏感项通过环境变量（`.env`）注入，数据库通过卷持久化。
@@ -39,3 +48,7 @@ public/              # 前端页面
 | `WECHAT_API_BASE` | 企业微信 API 地址 | 否 |
 
 > ⚠️ `ENCRYPTION_KEY` 一旦产生数据后不可更改，否则已加密数据无法解密。
+
+## 项目来源
+
+本项目基于 [wangwangit/qywx-push](https://github.com/wangwangit/qywx-push) 修改，镜像名称与上游项目明确区分。
