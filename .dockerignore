@@ -1,0 +1,65 @@
+# ===== 依赖与缓存（镜像内重新安装生产依赖）=====
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.pnpm-store
+
+# ===== 环境变量与密钥（绝不打包进镜像）=====
+.env
+.env.*
+!.env.example
+env.template
+*.key
+*.pem
+
+# ===== 运行时数据（由 volume 挂载，不打包）=====
+database
+database/**
+logs
+*.log
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# ===== 测试代码与开发文档（生产镜像不需要）=====
+test
+tests
+__tests__
+coverage
+.nyc_output
+docs
+MODIFICATIONS_SUMMARY.md
+
+# ===== 旧的/替代 Dockerfile（避免混淆）=====
+Dockerfile.alternative
+Dockerfile.*
+!Dockerfile
+
+# ===== 部署交付物（不打包进镜像）=====
+deploy
+deploy/**
+*.tar
+*.tar.gz
+*.tgz
+
+# ===== 版本控制与 IDE =====
+.git
+.gitignore
+.gitattributes
+.worktrees
+worktrees
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== MCP / 临时文件 =====
+.mcp-ssh.lock
+*.tmp
+.cache
+.tmp

@@ -1,0 +1,18 @@
+services:
+  qywx-notifier-plus:
+    build: .
+    image: ghcr.io/mmlxm2025/qywx-notifier-plus:latest
+    container_name: qywx-notifier-plus
+    restart: unless-stopped
+    ports:
+      - "12121:12121"
+    volumes:
+      - ./database:/app/database
+    environment:
+      PORT: 12121
+      DB_PATH: /app/database/notifier.db
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?请在 .env 中设置 ENCRYPTION_KEY}
+      NODE_ENV: production
+      WECHAT_API_BASE: ${WECHAT_API_BASE:-https://qyapi.weixin.qq.com}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请在 .env 中设置 ADMIN_PASSWORD}

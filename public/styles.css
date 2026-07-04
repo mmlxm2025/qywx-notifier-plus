@@ -1,0 +1,234 @@
+/*
+ * 公共设计系统（ui-ux-pro-max + web-design-guidelines）。
+ *
+ * 设计目标：
+ *   - 与现有 DaisyUI garden 主题共存，不覆盖 DaisyUI 核心类。
+ *   - 集中管理设计令牌：颜色 / 间距 / 圆角 / 阴影 / 图标尺寸 / 交互。
+ *   - 提供状态、焦点、响应式与 reduced-motion 的统一基线。
+ *   - 业务样式仍以 Tailwind utility 为主，本文件只放语义令牌与共享组件样式。
+ *
+ * 引入方式：<link rel="stylesheet" href="/public/styles.css">（CSP style-src 'self' 已放行）。
+ */
+
+:root {
+    /* ── 间距令牌（8dp 节奏，§5 spacing-scale）────────────────────────── */
+    --space-xs: 0.25rem;   /* 4px  */
+    --space-sm: 0.5rem;    /* 8px  */
+    --space-md: 0.75rem;   /* 12px */
+    --space-lg: 1rem;      /* 16px */
+    --space-xl: 1.5rem;    /* 24px */
+    --space-2xl: 2rem;     /* 32px */
+
+    /* ── 圆角令牌（§4 effects-match-style，统一层级）────────────────── */
+    --radius-sm: 0.375rem;   /* 6px  - 小元素（badge/pill） */
+    --radius-md: 0.5rem;     /* 8px  - 卡片内分区、输入框 */
+    --radius-lg: 1rem;       /* 16px - 顶层 glass-card */
+    --radius-full: 9999px;
+
+    /* ── 阴影令牌（§4 elevation-consistent，统一高度层级）──────────── */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+    --shadow-focus: 0 0 0 3px rgba(59, 130, 246, 0.35);
+
+    /* ── 状态色（与生命周期对应，文字始终伴随，不只靠颜色）────────── */
+    --app-status-draft: #b45309;      /* 待完善（加深保证 4.5:1 对比） */
+    --app-status-active: #15803d;     /* 运行中 */
+    --app-status-paused: #b91c1c;     /* 已暂停 */
+    --app-warn-duplicate: #92400e;    /* 重复身份告警 */
+    --app-focus-ring: 0 0 0 2px rgba(59, 130, 246, 0.5);
+
+    /* ── 动效令牌（§7 duration-timing / motion-consistency）────────── */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);   /* 进入：减速 */
+    --ease-in: cubic-bezier(0.7, 0, 0.84, 0);    /* 退出：加速 */
+    --duration-fast: 150ms;
+    --duration-base: 200ms;
+    --duration-slow: 300ms;
+
+    /* ── 间距基线（保留兼容旧引用）────────────────────────────────── */
+    --app-gap: var(--space-lg);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 全局背景与 glass-card（原分散在 5 个 HTML <style>，现集中收敛）
+ * ────────────────────────────────────────────────────────────────────── */
+body {
+    background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 45%, #bef264 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+}
+
+.glass-card {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: var(--shadow-lg);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 图标尺寸令牌（§4 consistent-icon-sizing，消除 inline style 混用）
+ * 用法：<i data-lucide="..." class="icon-sm"></i>
+ * ────────────────────────────────────────────────────────────────────── */
+.icon-xs { width: 0.75rem; height: 0.75rem; }   /* 12px */
+.icon-sm { width: 1rem; height: 1rem; }         /* 16px */
+.icon-md { width: 1.25rem; height: 1.25rem; }   /* 20px */
+.icon-lg { width: 1.5rem; height: 1.5rem; }     /* 24px */
+.icon-xl { width: 2rem; height: 2rem; }         /* 32px */
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 交互反馈（§7 scale-feedback / state-transition，仅 transform 不触发布局）
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* 按钮按压微缩反馈：所有 .btn 在 active 时轻微缩小（§7 scale-feedback）。 */
+.btn {
+    transition: transform var(--duration-fast) var(--ease-out),
+                background-color var(--duration-fast) var(--ease-out),
+                border-color var(--duration-fast) var(--ease-out),
+                box-shadow var(--duration-fast) var(--ease-out);
+}
+.btn:active:not(:disabled):not(.btn-disabled) {
+    transform: scale(0.97);
+}
+
+/* 可交互卡片 hover 抬升（应用卡片、规则行）。
+   用法：在 <article>/<tr> 上加 .card-hover，配合已存在的 transition-shadow。 */
+.card-hover {
+    transition: box-shadow var(--duration-base) var(--ease-out),
+                transform var(--duration-base) var(--ease-out),
+                border-color var(--duration-base) var(--ease-out);
+}
+.card-hover:hover {
+    box-shadow: var(--shadow-md);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 应用主状态徽标：颜色 + 文字 + 图标三重表达（§1 color-not-only / §4 state-clarity）
+ * ────────────────────────────────────────────────────────────────────── */
+.app-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 0.125rem var(--space-sm);
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    white-space: nowrap;
+}
+.app-badge--draft { background: #fef3c7; color: var(--app-status-draft); }
+.app-badge--active { background: #dcfce7; color: var(--app-status-active); }
+.app-badge--paused { background: #fee2e2; color: var(--app-status-paused); }
+.app-badge--warn {
+    background: #fef3c7;
+    color: var(--app-warn-duplicate);
+    border: 1px dashed var(--app-warn-duplicate);
+}
+
+/* 重复身份告警（独立于主状态）。 */
+.app-warn-duplicate {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: 0.75rem;
+    color: var(--app-warn-duplicate);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 焦点与表单（§1 focus-states / §8 focus-management）
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* 统一可见焦点：键盘操作时显式聚焦环，鼠标点击不干扰。 */
+:focus-visible {
+    outline: none;
+    box-shadow: var(--app-focus-ring);
+}
+
+/* 输入框聚焦态：border-color 平滑过渡到 primary（garden 绿）。 */
+.input:focus,
+.textarea:focus,
+.select:focus {
+    transition: border-color var(--duration-fast) var(--ease-out),
+                box-shadow var(--duration-fast) var(--ease-out);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 导航（§9 nav-state-active / destructive-nav-separation）
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* 当前导航项：底部指示条 + 背景高亮（不只靠颜色）。 */
+.app-nav-link {
+    position: relative;
+    transition: background-color var(--duration-fast) var(--ease-out);
+}
+.app-nav-link[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -2px;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 2px;
+    border-radius: var(--radius-full);
+    background: currentColor;
+    opacity: 0.7;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 加载与高亮
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* 骨架屏：加载中占位（§3 progressive-loading / §7 loading-states）。 */
+.app-skeleton {
+    background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 37%, #e5e7eb 63%);
+    background-size: 400% 100%;
+    animation: app-skeleton-shimmer 1.4s ease infinite;
+    border-radius: var(--radius-md);
+}
+@keyframes app-skeleton-shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+
+/* 新建成功后高亮行（?highlight=<code>），高亮不超过一次会话。 */
+.app-row-highlight {
+    animation: app-row-flash 2.5s ease-out 1;
+}
+@keyframes app-row-flash {
+    0% { background-color: rgba(22, 163, 74, 0.18); }
+    100% { background-color: transparent; }
+}
+
+/* 状态提示淡入（api_code 可用性结果等，§7 state-transition）。 */
+.app-fade-in {
+    animation: app-fade-in var(--duration-base) var(--ease-out);
+}
+@keyframes app-fade-in {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 移动端触控目标（§2 touch-target-size，btn-xs 在窄屏扩大点击区）
+ * ────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    /* btn-xs/btn-sm 默认高度偏小（24-32px），移动端扩大到 ≥36px 触控友好。 */
+    .btn-xs,
+    .btn-sm {
+        min-height: 2.25rem;   /* 36px */
+    }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * 尊重用户减少动效偏好（§1 reduced-motion，全局禁用动画/过渡）
+ * ────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    .app-skeleton,
+    .app-row-highlight,
+    .app-fade-in { animation: none; }
+    * {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+    }
+}

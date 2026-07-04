@@ -1,0 +1,50 @@
+# =====================================================================
+# 企业微信通知转发服务 - 1Panel 编排文件
+#
+# 说明：
+#   - 默认直接拉取 GHCR 镜像 ghcr.io/mmlxm2025/qywx-notifier-plus:latest
+#   - 离线导入时，deploy/import-load.sh 会通过 IMAGE 变量使用本地镜像。
+#   - 1Panel 服务器无需源码，也无需自己构建镜像。
+#   - 所有敏感配置（加密密钥、管理员密码）通过 .env 文件注入，
+#     镜像本身不含任何密钥或数据。
+#   - 数据库通过命名卷持久化，删除容器数据不丢。
+# =====================================================================
+
+services:
+  qywx-notifier-plus:
+    image: ${IMAGE:-ghcr.io/mmlxm2025/qywx-notifier-plus:latest}
+    container_name: qywx-notifier-plus
+    restart: unless-stopped
+
+    # 端口映射：宿主机端口:容器端口
+    # 左侧 12121 是你从外部访问的端口，可按需修改；右侧 12121 固定不动
+    ports:
+      - "${HOST_PORT:-12121}:12121"
+
+    # 数据持久化：把容器内 /app/database 挂到 Docker 命名卷
+    volumes:
+      - qywx-notifier-plus-data:/app/database
+
+    # 运行时配置（值来自同目录 .env 文件）
+    environment:
+      - PORT=12121
+      - DB_PATH=/app/database/notifier.db
+      - NODE_ENV=production
+      - WECHAT_API_BASE=${WECHAT_API_BASE:-https://qyapi.weixin.qq.com}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?请先在 .env 中设置 ENCRYPTION_KEY}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
+
+    # 健康检查（SEC-007）：就绪探测 /health/ready，仅 HTTP 200 视为健康，
+    # 数据库不可用返回 503 时标记不健康。镜像内 Dockerfile 已内置同样配置。
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:12121/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+# 命名卷：由 Docker / 1Panel 自动管理存储位置
+volumes:
+  qywx-notifier-plus-data:
+    name: qywx-notifier-plus-data
