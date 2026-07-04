@@ -1,0 +1,26 @@
+services:
+  qywx-notifier-plus:
+    build:
+      context: .
+      args:
+        VCS_REF: ${VCS_REF:-local}
+        APP_VERSION: ${APP_VERSION:-2.0.0-dev}
+    image: ghcr.io/mmlxm2025/qywx-notifier-plus:latest
+    container_name: qywx-notifier-plus
+    restart: unless-stopped
+    ports:
+      - "${HOST_BIND:-0.0.0.0}:12121:12121"
+    volumes:
+      - ./database:/app/database
+    environment:
+      PORT: 12121
+      DB_PATH: /app/database/notifier.db
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?请在 .env 中设置 ENCRYPTION_KEY}
+      NODE_ENV: production
+      WECHAT_API_BASE: ${WECHAT_API_BASE:-https://qyapi.weixin.qq.com}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请在 .env 中设置 ADMIN_PASSWORD}
+      # 端口仍对公网开放时必须保持 false；仅在端口改为回环监听后设为 loopback。
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # 仅隔离测试实例设置为随机且唯一的 16+ 字符值；生产环境留空。
+      TEST_INSTANCE_ID: ${TEST_INSTANCE_ID:-}

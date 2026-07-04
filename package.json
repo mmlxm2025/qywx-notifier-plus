@@ -1,0 +1,45 @@
+{
+  "name": "qywx-notifier-plus",
+  "version": "2.0.0-dev",
+  "description": "企业微信通知转发服务 - 类似Server酱的轻量级通知服务",
+  "main": "server.js",
+  "scripts": {
+    "build": "npm run build:frontend",
+    "build:frontend": "tailwindcss -c tailwind.config.js -i src/styles/tailwind.css -o public/app.css --minify && node scripts/build-frontend.js",
+    "start": "node server.js",
+    "predev": "npm run build:frontend",
+    "dev": "nodemon server.js",
+    "test": "npm run build:frontend && node --test --test-isolation=none test/backend-*.test.js test/frontend-*.test.js test/security.test.js test/review.test.js",
+    "test:isolated": "npm run build:frontend && node --test test/backend-*.test.js test/frontend-*.test.js test/security.test.js test/review.test.js",
+    "test:live": "node --test test/live/*.test.js"
+  },
+  "keywords": [
+    "wechat",
+    "notification",
+    "api",
+    "webhook"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "dotenv": "^16.3.1",
+    "express": "^5.2.1",
+    "form-data": "^4.0.6",
+    "sqlite3": "^6.0.1",
+    "wxcrypt": "^1.4.3"
+  },
+  "devDependencies": {
+    "daisyui": "^3.5.0",
+    "lucide": "^0.460.0",
+    "nodemon": "^3.0.1",
+    "tailwindcss": "^3.4.16"
+  },
+  "allowScripts": {
+    "sqlite3": true
+  }
+}
