@@ -118,15 +118,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function renderGroup(corpid, group) {
         const section = document.createElement('section');
-        section.className = 'glass-card p-4';
+        section.className = 'glass-card p-3 sm:p-4 space-y-3';
 
         const header = document.createElement('div');
-        header.className = 'flex items-center gap-2 mb-3';
+        header.className = 'flex items-center gap-2 mb-1 flex-wrap';
         const icon = document.createElement('i');
         icon.setAttribute('data-lucide', 'building-2');
-        icon.className = 'h-5 w-5 text-base-content/60';
+        icon.className = 'icon-md text-base-content/60 flex-shrink-0';
         const title = document.createElement('h2');
-        title.className = 'text-lg font-semibold';
+        title.className = 'app-type-section';
         // 标题只显示脱敏值（§7.2），完整 corpid 不进入 DOM 文本。
         title.textContent = '企业 ' + maskCorpid(corpid);
         const count = document.createElement('span');
@@ -152,20 +152,20 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderAppRow(app) {
         const row = document.createElement('article');
         // card-hover 提供统一 hover 抬升过渡（styles.css），配合 8dp 圆角令牌。
-        row.className = 'card-hover border border-base-200 rounded-lg p-4 bg-base-100/60';
+        row.className = 'card-hover border border-base-200 rounded-lg p-3 sm:p-4 bg-base-100/60 min-w-0';
         row.setAttribute('data-code', app.code);
 
         // 第一行：描述 + 状态徽标。
         const top = document.createElement('div');
-        top.className = 'flex items-start justify-between gap-3 flex-wrap';
+        top.className = 'flex items-start justify-between gap-2 sm:gap-3 flex-wrap';
 
         const titleBlock = document.createElement('div');
         titleBlock.className = 'flex-1 min-w-0';
         const desc = document.createElement('div');
-        desc.className = 'font-semibold truncate';
+        desc.className = 'font-semibold text-base truncate';
         desc.textContent = app.description || '未命名应用';
         const meta = document.createElement('div');
-        meta.className = 'text-xs text-base-content/60 mt-1 flex items-center flex-wrap';
+        meta.className = 'app-type-caption text-base-content/60 mt-1 flex items-center flex-wrap gap-x-1 gap-y-0.5 break-words';
         // meta 信息用 · 分隔，更紧凑（§6 whitespace-balance）。
         const metaParts = [
             'AgentID：' + (app.agentid ? app.agentid : '待填写'),
@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 状态徽标区（主状态 + 重复告警，不混用、不只靠颜色）。
         const statusBlock = document.createElement('div');
-        statusBlock.className = 'flex items-center gap-2 flex-wrap';
+        statusBlock.className = 'flex items-center gap-2 flex-wrap flex-shrink-0';
         statusBlock.appendChild(renderStatusBadge(app.lifecycle_status));
         if (Array.isArray(app.warnings) && app.warnings.includes('duplicate_identity')) {
             const dup = document.createElement('span');
@@ -198,7 +198,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 通道摘要（§7.2）：应用 Code 开关 + 规则启用数/总数；暂停时注明总开关暂停中。
         const channel = document.createElement('div');
-        channel.className = 'mt-3 text-xs text-base-content/70 flex items-center gap-3 flex-wrap';
+        channel.className = 'app-type-caption mt-2 sm:mt-3 text-base-content/70 flex items-center gap-2 sm:gap-3 flex-wrap';
         const codeSend = document.createElement('span');
         codeSend.textContent = '应用 Code 发送：' + (app.code_send_enabled ? '开启' : '关闭');
         channel.appendChild(codeSend);
@@ -212,10 +212,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 操作行：总开关 + 编辑/规则/安全（按 capabilities 显示）。
         // §4 primary-action：编辑为主操作（btn-primary），次要操作 btn-ghost；
-        // 删除右移隔离（§8 destructive-emphasis），用 ml-auto 推到行尾。
+        // 删除右移隔离（§8 destructive-emphasis）；窄屏由 .app-row-actions 网格布局接管。
         const actions = document.createElement('div');
-        actions.className = 'mt-3 flex items-center gap-2 flex-wrap';
-        actions.appendChild(renderMasterToggle(app));
+        actions.className = 'app-row-actions mt-2 sm:mt-3';
+        const toggle = renderMasterToggle(app);
+        toggle.classList.add('app-row-toggle');
+        actions.appendChild(toggle);
         appendCapabilityAction(actions, app, {
             cond: app.lifecycle_status === 'draft',
             href: '/new?code=' + encodeURIComponent(app.code),
@@ -239,8 +241,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (app.capabilities && app.capabilities.can_delete) {
             const delBtn = document.createElement('button');
             delBtn.type = 'button';
-            // ml-auto 把删除推到行尾，与正常操作视觉隔离（§8 destructive-emphasis）。
-            delBtn.className = 'btn btn-sm btn-ghost btn-error gap-1.5 ml-auto';
+            // sm:ml-auto 宽屏把删除推到行尾；窄屏由 .app-row-delete 占满整行。
+            delBtn.className = 'app-row-delete btn btn-sm btn-ghost btn-error gap-1.5 sm:ml-auto';
             const delIcon = document.createElement('i');
             delIcon.setAttribute('data-lucide', 'trash-2');
             delIcon.className = 'icon-sm';
@@ -282,7 +284,7 @@ document.addEventListener('DOMContentLoaded', function () {
         cb.type = 'checkbox';
         cb.className = 'toggle toggle-sm toggle-primary';
         const label = document.createElement('span');
-        label.className = 'text-xs text-base-content/70';
+        label.className = 'app-type-caption text-base-content/70';
         // 初始状态。
         renderToggleState(cb, label, app.lifecycle_status === 'active');
         // 辅助说明：暂停只阻止发送，不影响编辑/规则/安全设置（P1-04 术语收口）。

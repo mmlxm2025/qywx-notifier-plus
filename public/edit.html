@@ -9,14 +9,14 @@
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-4">
-    <div class="w-full max-w-3xl mx-auto my-4">
-        <div id="app-topnav" data-active="overview" class="glass-card p-4 mb-4"></div>
+<body class="p-3 sm:p-4 md:p-6">
+    <div class="app-page w-full max-w-3xl mx-auto my-2 sm:my-4">
+        <div id="app-topnav" data-active="overview" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card p-6">
+        <div class="glass-card p-4 sm:p-6 min-w-0">
             <header class="flex items-center justify-between flex-wrap gap-3 mb-4">
-                <h1 class="text-2xl font-bold flex items-center gap-2">
-                    <i data-lucide="pencil" class="icon-lg text-primary"></i>
+                <h1 class="app-type-page flex items-center gap-2 min-w-0">
+                    <i data-lucide="pencil" class="icon-lg text-primary flex-shrink-0"></i>
                     编辑应用
                 </h1>
                 <a href="/" class="btn btn-sm btn-ghost gap-1.5">
@@ -54,7 +54,7 @@
 
                 <!-- 1. 基本信息 -->
                 <section class="border border-base-200 rounded-lg p-4">
-                    <h2 class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="info" class="icon-md text-primary"></i> 基本信息</h2>
+                    <h2 class="app-type-section mb-3 flex items-center gap-2"><i data-lucide="info" class="icon-md text-primary"></i> 基本信息</h2>
                     <div class="form-control mb-3">
                         <label for="f-description" class="label font-medium">应用名称/备注</label>
                         <input id="f-description" type="text" class="input input-bordered w-full" placeholder="如：服务器告警推送" autocomplete="off">
@@ -67,7 +67,7 @@
 
                 <!-- 2. 企业凭证 -->
                 <section class="border border-base-200 rounded-lg p-4">
-                    <h2 class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="key" class="icon-md text-primary"></i> 企业凭证</h2>
+                    <h2 class="app-type-section mb-3 flex items-center gap-2"><i data-lucide="key" class="icon-md text-primary"></i> 企业凭证</h2>
                     <div class="form-control mb-3">
                         <label for="f-corpid" class="label font-medium">CorpID（不可修改，更换企业请新建应用）</label>
                         <input id="f-corpid" type="text" class="input input-bordered w-full opacity-60" readonly>
@@ -83,7 +83,7 @@
 
                 <!-- 3. 回调配置 -->
                 <section class="border border-base-200 rounded-lg p-4">
-                    <h2 class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="webhook" class="icon-md text-primary"></i> 回调配置</h2>
+                    <h2 class="app-type-section mb-3 flex items-center gap-2"><i data-lucide="webhook" class="icon-md text-primary"></i> 回调配置</h2>
                     <label class="flex items-center gap-2 cursor-pointer mb-3">
                         <input id="f-callback-enabled" type="checkbox" class="toggle toggle-primary toggle-sm">
                         <span class="text-sm">启用回调</span>
@@ -101,7 +101,7 @@
 
                 <!-- 4. 默认接收人 -->
                 <section class="border border-base-200 rounded-lg p-4">
-                    <h2 class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="users" class="icon-md text-primary"></i> 默认接收成员</h2>
+                    <h2 class="app-type-section mb-3 flex items-center gap-2"><i data-lucide="users" class="icon-md text-primary"></i> 默认接收成员</h2>
                     <div class="mb-2">
                         <button type="button" id="refresh-members-btn" class="btn btn-xs btn-outline gap-1">
                             <i data-lucide="refresh-cw" class="icon-xs"></i> 刷新成员列表
@@ -112,26 +112,26 @@
 
                 <!-- 5. 安全设置 -->
                 <section id="security-section" class="border border-base-200 rounded-lg p-4">
-                    <h2 class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="shield-check" class="icon-md text-primary"></i> 安全设置</h2>
+                    <h2 class="app-type-section mb-3 flex items-center gap-2"><i data-lucide="shield-check" class="icon-md text-primary"></i> 安全设置</h2>
 
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
+                    <div class="app-setting-row mb-4">
+                        <div class="min-w-0">
                             <div class="font-medium text-sm">允许应用 Code 直接发送</div>
                             <div class="text-xs text-base-content/60">关闭后 /api/notify/:code 返回 403；规则 API 不受影响。</div>
                         </div>
-                        <label class="flex items-center gap-2 cursor-pointer">
+                        <label class="app-setting-actions flex items-center gap-2 cursor-pointer">
                             <input id="f-code-send-enabled" type="checkbox" class="toggle toggle-sm toggle-primary">
                             <span id="code-send-status" class="text-xs text-base-content/70">—</span>
                         </label>
                     </div>
 
                     <div class="divider my-2"></div>
-                    <div class="flex items-center justify-between">
-                        <div>
+                    <div class="app-setting-row">
+                        <div class="min-w-0">
                             <div class="font-medium text-sm">通知密钥（X-Notify-Key）</div>
                             <div id="notify-key-status" class="text-xs text-base-content/60">未加载</div>
                         </div>
-                        <div class="flex gap-1">
+                        <div class="app-setting-actions flex flex-wrap gap-1">
                             <button type="button" id="enable-notify-key-btn" class="btn btn-xs btn-primary hidden">启用</button>
                             <button type="button" id="rotate-notify-key-btn" class="btn btn-xs btn-outline btn-warning hidden">轮换</button>
                             <button type="button" id="revoke-notify-key-btn" class="btn btn-xs btn-outline btn-error hidden">撤销</button>

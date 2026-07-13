@@ -9,21 +9,21 @@
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-4">
-    <div class="w-full max-w-2xl mx-auto my-4">
-        <div id="app-topnav" data-active="overview" class="glass-card p-4 mb-4"></div>
+<body class="p-3 sm:p-4 md:p-6">
+    <div class="app-page w-full max-w-2xl mx-auto my-2 sm:my-4">
+        <div id="app-topnav" data-active="overview" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card p-6">
-            <h1 class="text-2xl font-bold text-primary flex items-center gap-2 mb-2">
-                <i data-lucide="plus-circle" class="icon-lg"></i>
+        <div class="glass-card p-4 sm:p-6 min-w-0">
+            <h1 class="app-type-page text-primary flex items-center gap-2 mb-2">
+                <i data-lucide="plus-circle" class="icon-lg flex-shrink-0"></i>
                 新建应用
             </h1>
-            <p class="text-base-content/70 text-sm mb-4">
+            <p class="app-type-lead text-base-content/70 mb-4">
                 四步创建：回调 → 凭证 → 接收人 → 确认。CorpID 创建后锁定，更换企业需新建。
             </p>
 
-            <!-- 步骤进度（§5.4 四步） -->
-            <ul class="steps steps-vertical lg:steps-horizontal w-full mb-6">
+            <!-- 步骤进度（§5.4 四步）：默认纵向，lg 横向 -->
+            <ul class="steps steps-vertical lg:steps-horizontal w-full mb-4 sm:mb-6 text-sm sm:text-base">
                 <li class="step step-primary" id="step-indicator-1">企业与回调</li>
                 <li class="step" id="step-indicator-2">凭证</li>
                 <li class="step" id="step-indicator-3">接收人</li>
@@ -79,8 +79,8 @@
                         <i data-lucide="shield-check" class="icon-md"></i> 验证凭证
                     </button>
                 </form>
-                <div class="flex gap-2 mt-4">
-                    <button type="button" id="back-to-1" class="btn btn-ghost gap-1">
+                <div class="flex flex-col sm:flex-row gap-2 mt-4">
+                    <button type="button" id="back-to-1" class="btn btn-ghost gap-1 w-full sm:w-auto">
                         <i data-lucide="arrow-left" class="icon-sm"></i> 上一步
                     </button>
                 </div>
@@ -93,11 +93,11 @@
                     <span>选择该应用的默认接收成员（仅成员，部门/标签由规则承载）。</span>
                 </div>
                 <div id="recipient-picker-mount"></div>
-                <div class="flex gap-2 mt-4">
-                    <button type="button" id="back-to-2" class="btn btn-ghost gap-1">
+                <div class="flex flex-col-reverse sm:flex-row gap-2 mt-4">
+                    <button type="button" id="back-to-2" class="btn btn-ghost gap-1 w-full sm:w-auto">
                         <i data-lucide="arrow-left" class="icon-sm"></i> 上一步
                     </button>
-                    <button type="button" id="to-step-4" class="btn btn-primary gap-1">
+                    <button type="button" id="to-step-4" class="btn btn-primary gap-1 w-full sm:w-auto sm:ml-auto">
                         下一步 <i data-lucide="arrow-right" class="icon-sm"></i>
                     </button>
                 </div>
@@ -110,11 +110,11 @@
                     <span>提交后将调用企业微信验证并写入。AgentID 或 CorpSecret 变化会重新验证凭证。</span>
                 </div>
                 <div id="summary" class="bg-base-100 rounded-lg p-4 border border-base-200 mb-4 text-sm space-y-1"></div>
-                <div class="flex gap-2">
-                    <button type="button" id="back-to-3" class="btn btn-ghost gap-1">
+                <div class="flex flex-col-reverse sm:flex-row gap-2">
+                    <button type="button" id="back-to-3" class="btn btn-ghost gap-1 w-full sm:w-auto">
                         <i data-lucide="arrow-left" class="icon-sm"></i> 上一步
                     </button>
-                    <button type="button" id="complete-btn" class="btn btn-success btn-lg flex-1 gap-1">
+                    <button type="button" id="complete-btn" class="btn btn-success btn-lg flex-1 gap-1 w-full">
                         <i data-lucide="check" class="icon-md"></i> 完成配置
                     </button>
                 </div>

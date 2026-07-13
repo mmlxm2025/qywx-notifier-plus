@@ -87,6 +87,9 @@ test('narrow-screen overflow, labels and edit action regressions stay fixed', ()
     const rulesScript = read('public/rules.js');
     assert.match(rulesScript, /checked \? '禁用' : '启用'/);
     assert.match(rulesScript, /setAttribute\('aria-label', label\)/);
+    // 规则列表使用响应式卡片，避免移动端宽表横向溢出。
+    assert.match(rulesScript, /app-rule-card/);
+    assert.doesNotMatch(rulesScript, /table-zebra/);
 
     const edit = read('public/edit.html');
     assert.doesNotMatch(edit, /class="[^"]*\bsticky\b/);
@@ -99,4 +102,21 @@ test('narrow-screen overflow, labels and edit action regressions stay fixed', ()
     const styles = read('public/styles.css');
     assert.match(styles, /#status \.alert > \*[\s\S]*?overflow-wrap:\s*anywhere/,
         'long backend errors must wrap inside the status banner');
+});
+
+test('responsive type scale uses rem with 16px PC base', () => {
+    const styles = read('public/styles.css');
+    assert.match(styles, /html\s*\{[\s\S]*?font-size:\s*100%/);
+    assert.match(styles, /--text-base:\s*1rem/);
+    assert.match(styles, /\.app-type-page\s*\{[\s\S]*?font-size:\s*var\(--text-xl\)/);
+    assert.match(styles, /@media\s*\(min-width:\s*640px\)[\s\S]*?\.app-type-page[\s\S]*?--text-2xl/);
+
+    const tailwind = read('tailwind.config.js');
+    assert.match(tailwind, /base:\s*\[\s*'1rem'/);
+
+    for (const page of pages) {
+        const html = read(`public/${page}`);
+        assert.match(html, /viewport/, `${page} needs viewport meta`);
+        assert.doesNotMatch(html, /font-size:\s*\d+px/, `${page} must not hardcode px font-size`);
+    }
 });

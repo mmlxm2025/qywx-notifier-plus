@@ -9,25 +9,25 @@
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-4">
-    <div class="w-full max-w-5xl min-w-0 mx-auto my-4">
-        <div id="app-topnav" data-active="rules" class="glass-card p-4 mb-4"></div>
+<body class="p-3 sm:p-4 md:p-6">
+    <div class="app-page w-full max-w-5xl min-w-0 mx-auto my-2 sm:my-4">
+        <div id="app-topnav" data-active="rules" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card min-w-0 p-6">
+        <div class="glass-card min-w-0 p-4 sm:p-6">
             <header class="flex items-center justify-between flex-wrap gap-3 mb-4">
-                <h1 class="text-2xl font-bold flex items-center gap-2">
-                    <i data-lucide="route" class="h-7 w-7 text-primary"></i>
+                <h1 class="app-type-page flex items-center gap-2">
+                    <i data-lucide="route" class="icon-lg text-primary flex-shrink-0"></i>
                     接收规则
                 </h1>
             </header>
 
-            <section class="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] items-end mb-5">
-                <label class="form-control">
+            <section class="grid gap-3 sm:gap-4 md:grid-cols-[minmax(0,1fr)_auto] items-end mb-5">
+                <label class="form-control min-w-0">
                     <span class="label-text font-medium mb-1">选择配置 Code</span>
                     <select id="config-code" class="select select-bordered w-full"></select>
                 </label>
-                <button id="load-btn" type="button" class="btn btn-primary">
-                    <i data-lucide="search" class="h-5 w-5"></i>
+                <button id="load-btn" type="button" class="btn btn-primary w-full md:w-auto">
+                    <i data-lucide="search" class="icon-md"></i>
                     加载
                 </button>
             </section>
@@ -54,7 +54,7 @@
                 <div class="min-w-0 grid gap-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
                     <form id="rule-form" class="min-w-0 bg-base-100/70 rounded-xl p-4 border border-base-200">
                         <div class="flex items-center justify-between gap-3">
-                            <h2 id="form-title" class="text-base font-semibold">新建规则</h2>
+                            <h2 id="form-title" class="app-type-section">新建规则</h2>
                             <button id="reset-form-btn" type="button" class="btn btn-xs btn-ghost gap-1">
                                 <i data-lucide="plus" class="icon-sm"></i>
                                 新建
@@ -134,7 +134,7 @@
 
                     <section class="min-w-0 bg-base-100/70 rounded-xl p-4 border border-base-200">
                         <div class="flex items-center justify-between gap-3">
-                            <h2 class="text-base font-semibold flex items-center gap-1.5">
+                            <h2 class="app-type-section flex items-center gap-1.5">
                                 <i data-lucide="list" class="icon-sm text-base-content/60"></i>
                                 规则列表
                             </h2>

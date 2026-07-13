@@ -21,18 +21,19 @@
         const active = mount.getAttribute('data-active') || 'overview';
 
         const nav = document.createElement('nav');
-        nav.className = 'app-topnav w-full max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-3';
+        nav.className = 'app-topnav w-full max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-2 sm:gap-3';
         nav.setAttribute('aria-label', '主导航');
 
         // 品牌区。
         const brand = document.createElement('a');
         brand.href = '/';
-        brand.className = 'flex items-center gap-2 text-primary font-bold text-lg hover:opacity-80 transition-opacity';
+        brand.className = 'app-type-section flex items-center gap-2 min-w-0 text-primary font-bold hover:opacity-80 transition-opacity';
         const brandIcon = document.createElement('i');
         brandIcon.setAttribute('data-lucide', 'bell-ring');
-        brandIcon.className = 'icon-lg';
+        brandIcon.className = 'icon-lg flex-shrink-0';
         brand.appendChild(brandIcon);
         const brandText = document.createElement('span');
+        brandText.className = 'app-topnav-brand-text';
         brandText.textContent = '企业微信通知服务';
         brand.appendChild(brandText);
         nav.appendChild(brand);
@@ -44,7 +45,7 @@
             const a = document.createElement('a');
             a.href = link.href;
             // app-nav-link 提供底部指示条（aria-current 时显示）；统一图标尺寸令牌。
-            a.className = 'app-nav-link btn btn-sm btn-ghost gap-1.5';
+            a.className = 'app-nav-link btn btn-sm btn-ghost gap-1 sm:gap-1.5';
             if (link.key === active) {
                 a.setAttribute('aria-current', 'page');
                 a.classList.add('btn-active');
@@ -54,7 +55,11 @@
             icon.className = 'icon-sm';
             a.appendChild(icon);
             const label = document.createElement('span');
+            // 窄屏仅图标 + aria-label；sm 及以上显示文案，减少导航换行。
+            label.className = 'hidden sm:inline';
             label.textContent = link.label;
+            a.setAttribute('aria-label', link.label);
+            a.title = link.label;
             a.appendChild(label);
             linkGroup.appendChild(a);
         });
@@ -67,12 +72,15 @@
 
         const logoutBtn = document.createElement('button');
         logoutBtn.type = 'button';
-        logoutBtn.className = 'btn btn-sm btn-outline btn-error gap-1.5';
+        logoutBtn.className = 'btn btn-sm btn-outline btn-error gap-1 sm:gap-1.5';
+        logoutBtn.setAttribute('aria-label', '登出');
+        logoutBtn.title = '登出';
         const logoutIcon = document.createElement('i');
         logoutIcon.setAttribute('data-lucide', 'log-out');
         logoutIcon.className = 'icon-sm';
         logoutBtn.appendChild(logoutIcon);
         const logoutLabel = document.createElement('span');
+        logoutLabel.className = 'hidden sm:inline';
         logoutLabel.textContent = '登出';
         logoutBtn.appendChild(logoutLabel);
         logoutBtn.addEventListener('click', async () => {

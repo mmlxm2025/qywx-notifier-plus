@@ -728,56 +728,45 @@ document.addEventListener('DOMContentLoaded', function () {
         clear(rulesList);
         if (rules.length === 0) {
             const empty = document.createElement('div');
-            empty.className = 'text-sm text-base-content/60 py-8 text-center';
+            empty.className = 'app-type-lead text-base-content/60 py-8 text-center';
             empty.textContent = '暂无规则';
             rulesList.appendChild(empty);
             return;
         }
 
-        const table = document.createElement('table');
-        table.className = 'table table-zebra table-sm';
-        const thead = document.createElement('thead');
-        const headRow = document.createElement('tr');
-        ['名称', '范围', 'API', '启用', '操作'].forEach(label => {
-            const th = document.createElement('th');
-            th.textContent = label;
-            headRow.appendChild(th);
-        });
-        thead.appendChild(headRow);
-        table.appendChild(thead);
+        // 卡片列表：PC/移动端统一可读，避免宽表横向溢出（mobile-first 响应式）。
+        const list = document.createElement('div');
+        list.className = 'space-y-3';
+        list.setAttribute('role', 'list');
 
-        const tbody = document.createElement('tbody');
         rules.forEach(rule => {
-            const tr = document.createElement('tr');
+            const card = document.createElement('article');
+            card.className = 'app-rule-card card-hover';
+            card.setAttribute('role', 'listitem');
 
-            const nameTd = document.createElement('td');
-            nameTd.textContent = rule.name || '';
-            tr.appendChild(nameTd);
+            const head = document.createElement('div');
+            head.className = 'app-rule-card__head';
 
-            const scopeTd = document.createElement('td');
-            scopeTd.textContent = scopeText(rule);
-            tr.appendChild(scopeTd);
-
-            const apiTd = document.createElement('td');
-            const apiCode = document.createElement('code');
-            apiCode.className = 'text-xs';
-            apiCode.textContent = rule.apiUrl || `/api/notify/${rule.api_code}`;
-            apiTd.appendChild(apiCode);
-            tr.appendChild(apiTd);
+            const title = document.createElement('h3');
+            title.className = 'app-rule-card__title';
+            title.textContent = rule.name || '未命名规则';
+            head.appendChild(title);
 
             // 启停开关：禁用的规则其 API 发送返回 403，但规则保留。
-            const enabledTd = document.createElement('td');
             const enabledLabel = document.createElement('label');
-            enabledLabel.className = 'cursor-pointer flex items-center gap-1';
+            enabledLabel.className = 'cursor-pointer flex items-center gap-2 flex-shrink-0';
             const enabledToggle = document.createElement('input');
             enabledToggle.type = 'checkbox';
-            enabledToggle.className = 'toggle toggle-xs toggle-success';
+            enabledToggle.className = 'toggle toggle-sm toggle-success';
             enabledToggle.checked = rule.enabled !== false;
+            const enabledText = document.createElement('span');
+            enabledText.className = 'app-type-caption text-base-content/70';
             const updateToggleA11y = (checked) => {
                 const action = checked ? '禁用' : '启用';
                 const label = `${action}规则：${rule.name || '未命名规则'}`;
                 enabledToggle.title = label;
                 enabledToggle.setAttribute('aria-label', label);
+                enabledText.textContent = checked ? '已启用' : '已禁用';
             };
             updateToggleA11y(enabledToggle.checked);
             enabledToggle.addEventListener('change', async () => {
@@ -810,15 +799,37 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             });
             enabledLabel.appendChild(enabledToggle);
-            enabledTd.appendChild(enabledLabel);
-            tr.appendChild(enabledTd);
+            enabledLabel.appendChild(enabledText);
+            head.appendChild(enabledLabel);
+            card.appendChild(head);
 
-            const actionsTd = document.createElement('td');
-            actionsTd.className = 'flex flex-wrap gap-1';
+            const meta = document.createElement('dl');
+            meta.className = 'app-rule-card__meta';
+
+            const scopeDt = document.createElement('dt');
+            scopeDt.textContent = '范围';
+            const scopeDd = document.createElement('dd');
+            scopeDd.textContent = scopeText(rule);
+            meta.appendChild(scopeDt);
+            meta.appendChild(scopeDd);
+
+            const apiDt = document.createElement('dt');
+            apiDt.textContent = 'API';
+            const apiDd = document.createElement('dd');
+            const apiCode = document.createElement('code');
+            apiCode.className = 'font-mono text-xs sm:text-sm break-all';
+            apiCode.textContent = rule.apiUrl || `/api/notify/${rule.api_code}`;
+            apiDd.appendChild(apiCode);
+            meta.appendChild(apiDt);
+            meta.appendChild(apiDd);
+            card.appendChild(meta);
+
+            const actions = document.createElement('div');
+            actions.className = 'app-rule-card__actions';
 
             const editBtn = textButton('编辑', 'pencil', 'btn btn-xs btn-outline');
             editBtn.addEventListener('click', () => editRule(rule));
-            actionsTd.appendChild(editBtn);
+            actions.appendChild(editBtn);
 
             const copyBtn = textButton('复制', 'copy', 'btn btn-xs btn-outline');
             copyBtn.addEventListener('click', () => {
@@ -827,7 +838,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 navigator.clipboard.writeText(apiUrl);
                 toast.show('API 已复制', { type: 'success' });
             });
-            actionsTd.appendChild(copyBtn);
+            actions.appendChild(copyBtn);
 
             // 多应用（P1-02）：危险操作用 AppModal 确认，不再用 window.confirm。
             const regenBtn = textButton('重生成', 'refresh-cw', 'btn btn-xs btn-warning');
@@ -863,7 +874,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 });
             });
-            actionsTd.appendChild(regenBtn);
+            actions.appendChild(regenBtn);
 
             const deleteBtn = textButton('删除', 'trash-2', 'btn btn-xs btn-error');
             deleteBtn.addEventListener('click', () => {
@@ -895,13 +906,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 });
             });
-            actionsTd.appendChild(deleteBtn);
+            actions.appendChild(deleteBtn);
 
-            tr.appendChild(actionsTd);
-            tbody.appendChild(tr);
+            card.appendChild(actions);
+            list.appendChild(card);
         });
-        table.appendChild(tbody);
-        rulesList.appendChild(table);
+
+        rulesList.appendChild(list);
         refreshIcons();
     }
 

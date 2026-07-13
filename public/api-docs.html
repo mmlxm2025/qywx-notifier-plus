@@ -9,30 +9,30 @@
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="flex flex-col items-center justify-center p-4">
-    <div class="api-docs-card w-full max-w-4xl min-w-0 glass-card p-8 my-8">
-        <header class="mb-8">
+<body class="flex flex-col items-center justify-center p-3 sm:p-4 md:p-6">
+    <div class="api-docs-card w-full max-w-4xl min-w-0 glass-card p-4 sm:p-6 md:p-8 my-4 sm:my-8">
+        <header class="mb-6 sm:mb-8">
             <div class="flex items-center justify-between flex-wrap gap-3">
-                <h1 class="text-3xl font-bold text-primary flex items-center gap-2">
-                    <i data-lucide="book-open" class="h-8 w-8"></i>
+                <h1 class="app-type-display text-primary flex items-center gap-2 min-w-0">
+                    <i data-lucide="book-open" class="icon-lg sm:h-8 sm:w-8 flex-shrink-0"></i>
                     企业微信通知服务 API文档
                 </h1>
-                <a href="/" class="btn btn-outline btn-sm">
-                    <i data-lucide="arrow-left" class="h-4 w-4 mr-1"></i>
+                <a href="/" class="btn btn-outline btn-sm gap-1">
+                    <i data-lucide="arrow-left" class="icon-sm"></i>
                     返回首页
                 </a>
             </div>
-            <p class="text-base-content/70 mt-2">详细的API使用说明文档，帮助您快速集成企业微信消息推送功能</p>
+            <p class="app-type-lead text-base-content/70 mt-2">详细的API使用说明文档，帮助您快速集成企业微信消息推送功能</p>
         </header>
 
-        <div class="space-y-8">
+        <div class="space-y-6 sm:space-y-8">
             <!-- API概述 -->
             <section>
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                    <i data-lucide="info" class="h-6 w-6"></i>
+                <h2 class="app-type-page mb-3 sm:mb-4 flex items-center gap-2">
+                    <i data-lucide="info" class="icon-md flex-shrink-0"></i>
                     API概述
                 </h2>
-                <div class="bg-base-100 p-6 rounded-lg shadow-sm">
+                <div class="bg-base-100 p-4 sm:p-6 rounded-lg shadow-sm">
                     <p class="mb-4">企业微信通知服务提供了简单易用的HTTP API，用于向企业微信应用发送消息通知。通过配置您的企业微信应用信息，系统会生成一个唯一的API地址，您可以通过该地址发送消息。</p>
                     <div class="alert alert-info">
                         <i data-lucide="lightbulb" class="h-5 w-5"></i>
@@ -43,11 +43,11 @@
 
             <!-- 认证与安全 -->
             <section id="auth">
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <h2 class="app-type-page mb-3 sm:mb-4 flex items-center gap-2">
                     <i data-lucide="shield" class="h-6 w-6"></i>
                     认证与安全
                 </h2>
-                <div class="bg-base-100 p-6 rounded-lg shadow-sm space-y-4">
+                <div class="bg-base-100 p-4 sm:p-6 rounded-lg shadow-sm space-y-4">
                     <p>通知发送 API 支持两级安全策略，<strong>通知密钥默认关闭</strong>，可按需在管理后台「配置详情 → 通知密钥」中启用：</p>
                     <div class="overflow-x-auto">
                         <table class="table table-zebra w-full">
@@ -180,11 +180,11 @@ curl -X POST "https://your-server.com/api/notify/$CODE" \
 
             <!-- 发送消息API -->
             <section>
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <h2 class="app-type-page mb-3 sm:mb-4 flex items-center gap-2">
                     <i data-lucide="send" class="h-6 w-6"></i>
                     发送消息API
                 </h2>
-                <div class="bg-base-100 p-6 rounded-lg shadow-sm space-y-6">
+                <div class="bg-base-100 p-4 sm:p-6 rounded-lg shadow-sm space-y-6">
                     <div>
                         <h3 class="font-medium mb-2 text-lg">请求地址</h3>
                         <div class="bg-base-200 p-3 rounded-md">
@@ -423,11 +423,11 @@ curl -X POST "https://your-server.example/api/notify/your-code-here" \
 
             <!-- 接收规则 API -->
             <section>
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <h2 class="app-type-page mb-3 sm:mb-4 flex items-center gap-2">
                     <i data-lucide="route" class="h-6 w-6"></i>
                     接收规则 API
                 </h2>
-                <div class="bg-base-100 p-6 rounded-lg shadow-sm space-y-6">
+                <div class="bg-base-100 p-4 sm:p-6 rounded-lg shadow-sm space-y-6">
                     <div>
                         <h3 class="font-medium mb-2 text-lg">管理规则</h3>
                         <div class="overflow-x-auto">
@@ -543,11 +543,11 @@ curl -X POST "https://your-server.example/api/notify/your-code-here" \
 
             <!-- 多应用管理 API（2026-07-04） -->
             <section>
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <h2 class="app-type-page mb-3 sm:mb-4 flex items-center gap-2">
                     <i data-lucide="layout-grid" class="h-6 w-6"></i>
                     应用管理 API（多应用）
                 </h2>
-                <div class="bg-base-100 p-6 rounded-lg shadow-sm space-y-4 text-sm">
+                <div class="bg-base-100 p-4 sm:p-6 rounded-lg shadow-sm space-y-4 text-sm">
                     <div class="alert alert-info">
                         <i data-lucide="info" class="h-5 w-5"></i>
                         <div>一个应用 = <code>configurations</code> 的一行（企业 + AgentID + 凭证 + 默认接收人）。同一企业可有多个不同 AgentID 的应用，应用 Code 互不串用。</div>
@@ -635,11 +635,11 @@ curl -X POST "https://your-server.example/api/notify/your-code-here" \
 
             <!-- 集成示例 -->
             <section>
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <h2 class="app-type-page mb-3 sm:mb-4 flex items-center gap-2">
                     <i data-lucide="code" class="h-6 w-6"></i>
                     集成示例
                 </h2>
-                <div class="bg-base-100 p-6 rounded-lg shadow-sm space-y-6">
+                <div class="bg-base-100 p-4 sm:p-6 rounded-lg shadow-sm space-y-6">
                     <div class="alert alert-info">
                         <i data-lucide="info" class="h-5 w-5"></i>
                         <div class="text-sm">下方示例均按<strong>未启用通知密钥</strong>的最简形式给出。启用通知密钥后，请在每个请求追加 <code>X-Notify-Key</code> 头；完整 HMAC 四头签名范例见 <a href="#hmac" class="link link-primary">HMAC 签名模式</a>。</div>
@@ -724,11 +724,11 @@ sendNotification('部署完成', '项目已成功部署到生产环境\n\n版本
 
             <!-- 常见问题 -->
             <section>
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <h2 class="app-type-page mb-3 sm:mb-4 flex items-center gap-2">
                     <i data-lucide="help-circle" class="h-6 w-6"></i>
                     常见问题
                 </h2>
-                <div class="bg-base-100 p-6 rounded-lg shadow-sm">
+                <div class="bg-base-100 p-4 sm:p-6 rounded-lg shadow-sm">
                     <div class="space-y-4">
                         <div>
                             <h3 class="font-medium">Q: 如何获取配置Code？</h3>

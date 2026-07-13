@@ -9,15 +9,15 @@
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="flex flex-col items-center justify-center p-4">
-    <div class="w-full max-w-md glass-card p-8">
-        <div class="text-center mb-8">
+<body class="flex flex-col items-center justify-center p-3 sm:p-4 md:p-6 min-h-screen">
+    <div class="w-full max-w-md min-w-0 glass-card p-5 sm:p-8">
+        <div class="text-center mb-6 sm:mb-8">
             <!-- 头部图标：加 ring 提升层次（§4 elevation-consistent）。 -->
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 ring-4 ring-primary/5 mb-4">
+            <div class="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 ring-4 ring-primary/5 mb-4">
                 <i data-lucide="lock" class="icon-xl text-primary"></i>
             </div>
-            <h1 class="text-2xl font-bold text-primary">管理登录</h1>
-            <p class="text-base-content/60 mt-2">请输入管理员账号密码</p>
+            <h1 class="app-type-page text-primary">管理登录</h1>
+            <p class="app-type-lead text-base-content/60 mt-2">请输入管理员账号密码</p>
         </div>
 
         <div id="login-error" class="alert alert-error mb-4 hidden">

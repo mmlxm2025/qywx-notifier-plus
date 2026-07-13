@@ -9,23 +9,23 @@
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-4">
-    <div class="w-full max-w-5xl mx-auto my-4">
+<body class="p-3 sm:p-4 md:p-6">
+    <div class="app-page w-full max-w-5xl mx-auto my-2 sm:my-4">
         <!-- 顶部导航（公共组件渲染） -->
-        <div id="app-topnav" data-active="overview" class="glass-card p-4 mb-4"></div>
+        <div id="app-topnav" data-active="overview" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card p-6">
-            <header class="flex items-center justify-between flex-wrap gap-3 mb-6">
-                <div>
-                    <h1 class="text-2xl font-bold text-primary flex items-center gap-2">
-                        <i data-lucide="layout-grid" class="icon-lg"></i>
+        <div class="glass-card p-4 sm:p-6 min-w-0">
+            <header class="flex items-center justify-between flex-wrap gap-3 mb-4 sm:mb-6">
+                <div class="min-w-0">
+                    <h1 class="app-type-page text-primary flex items-center gap-2">
+                        <i data-lucide="layout-grid" class="icon-lg flex-shrink-0"></i>
                         应用总览
                     </h1>
-                    <p class="text-base-content/70 text-sm mt-1">
+                    <p class="app-type-lead text-base-content/70 mt-1">
                         管理企业微信自建应用，按企业分组。暂停、编辑或安全下线。
                     </p>
                 </div>
-                <a href="/new" class="btn btn-primary gap-1.5">
+                <a href="/new" class="btn btn-primary gap-1.5 w-full sm:w-auto">
                     <i data-lucide="plus" class="icon-sm"></i>
                     新建应用
                 </a>
