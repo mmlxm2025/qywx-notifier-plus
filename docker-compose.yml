@@ -1,3 +1,17 @@
+# =====================================================================
+# 企业微信通知转发服务 - 本地开发/构建编排（仓库主目录）
+#
+# 说明：
+#   - 使用 build 块从当前目录 Dockerfile 构建镜像
+#   - 数据库通过 bind mount（./database）持久化，方便本地查看
+#   - 敏感配置（加密密钥、管理员密码）通过 .env 文件注入
+#   - 生产部署请用 deploy/templates/ 下的模板或 deploy/deploy.mjs 向导
+#
+# 用法：
+#   cp env.template .env && 编辑密钥
+#   docker compose up -d --build
+# =====================================================================
+
 services:
   qywx-notifier-plus:
     build:
@@ -8,10 +22,18 @@ services:
     image: ghcr.io/mmlxm2025/qywx-notifier-plus:latest
     container_name: qywx-notifier-plus
     restart: unless-stopped
+
+    # 端口映射：宿主机IP:宿主机端口:容器端口
+    #   HOST_BIND：0.0.0.0 = 对外开放；127.0.0.1 = 仅本机（配合反向代理）
+    #   HOST_PORT：宿主机端口，默认 12121，被占用时可改（如 8080）
+    #   容器端口 12121 固定不动（由 Dockerfile EXPOSE 决定）
     ports:
-      - "${HOST_BIND:-0.0.0.0}:12121:12121"
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-12121}:12121"
+
+    # 数据持久化：bind mount 本地目录，方便直接查看/备份数据库文件
     volumes:
       - ./database:/app/database
+
     environment:
       PORT: 12121
       DB_PATH: /app/database/notifier.db
@@ -20,7 +42,16 @@ services:
       WECHAT_API_BASE: ${WECHAT_API_BASE:-https://qyapi.weixin.qq.com}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请在 .env 中设置 ADMIN_PASSWORD}
-      # 端口仍对公网开放时必须保持 false；仅在端口改为回环监听后设为 loopback。
+      # 端口仍对公网开放时必须保持 false；仅在端口改为回环监听后设为 loopback 或跳数(1)/CIDR。
       TRUST_PROXY: ${TRUST_PROXY:-false}
       # 仅隔离测试实例设置为随机且唯一的 16+ 字符值；生产环境留空。
       TEST_INSTANCE_ID: ${TEST_INSTANCE_ID:-}
+
+    # 健康检查（SEC-007）：就绪探测 /health/ready，仅 HTTP 200 视为健康，
+    # 数据库不可用返回 503 时标记不健康。镜像内 Dockerfile 已内置同样配置。
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:12121/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

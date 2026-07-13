@@ -432,10 +432,13 @@ class Database {
         return { id: result.lastID, code };
     }
 
-    // 根据code获取配置
+    // 根据 code 获取配置。
+    // 规范 §4.1 / §6.2：编号比较 ASCII 不区分大小写（与 ux_*_nocase 唯一索引一致）。
+    // 调用方应优先使用返回行中的 code 作为后续写操作的权威标识。
     async getConfigurationByCode(code) {
-        const sql = `SELECT * FROM configurations WHERE code = ?`;
-        return this.get(sql, [code]);
+        if (code === undefined || code === null || String(code).trim() === '') return null;
+        const sql = `SELECT * FROM configurations WHERE lower(code) = lower(?)`;
+        return this.get(sql, [String(code)]);
     }
 
     async listConfigurations() {
@@ -568,8 +571,9 @@ class Database {
             return { code, changes: 0, version: row ? (Number(row.version) || 1) : null };
         }
         sets.push('version = version + 1');
-        params.push(code);
-        let whereClause = 'WHERE code = ?';
+        params.push(String(code));
+        // 与 getConfigurationByCode 一致：大小写不敏感匹配，避免 /Edit 路径大小写差异导致 0 行更新。
+        let whereClause = 'WHERE lower(code) = lower(?)';
         if (expectedVersion !== undefined && expectedVersion !== null) {
             whereClause += ' AND version = ?';
             params.push(expectedVersion);
@@ -579,7 +583,8 @@ class Database {
         // 读回新版本（无论是否命中，便于上层区分 404 与冲突）。
         const row = await this.getConfigurationByCode(code);
         return {
-            code,
+            // 返回库内权威 code（规范大小写），不回传调用方可能大小写不一致的入参。
+            code: row ? row.code : code,
             changes: result.changes,
             version: row ? (Number(row.version) || 1) : null
         };
@@ -635,9 +640,12 @@ class Database {
         return this.allRaw(sql, [configCode]);
     }
 
+    // 按规则 API 编号查询。规范要求不区分大小写：自定义编号以小写入库，
+    // 但调用方可能传入 OPS-ALERT 等变体，必须仍能命中 ops-alert。
     async getNotificationRuleByApiCode(apiCode) {
-        const sql = `SELECT * FROM notification_rules WHERE api_code = ?`;
-        return this.get(sql, [apiCode]);
+        if (apiCode === undefined || apiCode === null || String(apiCode).trim() === '') return null;
+        const sql = `SELECT * FROM notification_rules WHERE lower(api_code) = lower(?)`;
+        return this.get(sql, [String(apiCode)]);
     }
 
     async getNotificationRuleById(id) {

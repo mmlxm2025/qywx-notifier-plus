@@ -28,7 +28,11 @@
      */
     AppHttp.request = async function request(method, path, opts = {}) {
         const headers = { 'Accept': 'application/json' };
-        if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+        // null/undefined 均视为无 body：不带 Content-Type，也不发送 "null" 字面量。
+        // 原因：express.json 默认 strict=true，只接受 object/array；JSON.stringify(null)="null"
+        // 会被 body parser 判为非法 JSON（400 INVALID_INPUT）。
+        const hasBody = opts.body !== undefined && opts.body !== null;
+        if (hasBody) headers['Content-Type'] = 'application/json';
 
         // If-Match 版本前置条件（§6.4 配置并发控制）。
         if (opts.version !== undefined && opts.version !== null) {
@@ -48,7 +52,7 @@
                 method,
                 headers,
                 credentials: 'same-origin',
-                body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+                body: hasBody ? JSON.stringify(opts.body) : undefined
             });
         } catch (networkErr) {
             return {

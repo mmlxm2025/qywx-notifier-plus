@@ -645,7 +645,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (id) {
                 res = await http.put(`/api/rules/${encodeURIComponent(id)}`, payload, opts);
             } else {
-                res = await http.post(`/api/configuration/${encodeURIComponent(currentCode)}/rules`, payload, opts);
+                // 必须用发起时捕获的 writeCode：改号确认弹窗期间若用户切换了应用，
+                // 用 currentCode 会把规则写到错误应用；opts.version 也是 writeCode 对应版本。
+                res = await http.post(`/api/configuration/${encodeURIComponent(writeCode)}/rules`, payload, opts);
             }
             if (res.ok) {
                 // 多应用（第三轮复验 P1-05）：写成功响应归属检查——
@@ -837,9 +839,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     confirmType: 'warning',
                     onConfirm: async () => {
                         const writeCode = currentCode;
+                        // 无业务 body：传 undefined（勿传 null）。null 会被 stringify 成 "null"，
+                        // express.json(strict) 会判为非法 JSON →「请求体不是合法的 JSON」。
                         const res = await http.post(
                             `/api/rules/${encodeURIComponent(rule.id)}/regenerate`,
-                            null,
+                            undefined,
                             { version: currentAppVersion }
                         );
                         if (res.ok) {

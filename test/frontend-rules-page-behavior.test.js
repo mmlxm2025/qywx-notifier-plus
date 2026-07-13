@@ -81,3 +81,38 @@ test('P0-03: rules.js 成功后采用服务端 app_version（不本地 +1）', (
     assert.doesNotMatch(script, /currentAppVersion\s*\+\s*1|version\s*\+\s*1/,
         '禁止本地 +1 推导版本');
 });
+
+// ─── 回归：重生成不得发送 JSON null body ────────────────────────────────
+
+test('regenerate 不传 null body（避免 express.json strict 400）', () => {
+    // 历史 bug：http.post(path, null, opts) → JSON.stringify(null)="null"
+    // → express.json(strict=true) 报「请求体不是合法的 JSON」。
+    assert.doesNotMatch(
+        script,
+        /regenerate['"`]\s*,\s*null\s*,/,
+        '重生成 POST 不得传 null 作为 body'
+    );
+    assert.match(script, /\/regenerate/, '应存在重生成请求');
+});
+
+test('http.js 将 null body 视为无 body（不发送 "null" 字面量）', () => {
+    const httpSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'http.js'), 'utf8');
+    assert.match(httpSrc, /opts\.body\s*!==\s*undefined\s*&&\s*opts\.body\s*!==\s*null/,
+        'AppHttp 应同时排除 null/undefined body');
+    assert.doesNotMatch(httpSrc, /body:\s*opts\.body\s*!==\s*undefined\s*\?\s*JSON\.stringify\(opts\.body\)/,
+        '不得仅用 !== undefined 决定是否 stringify（会把 null 变成 "null"）');
+});
+
+test('创建规则 POST 使用 writeCode 而非 currentCode（防止弹窗期间切应用写错）', () => {
+    // 创建路径必须绑定发起时的 writeCode；用 currentCode 会在确认弹窗期间切应用时写到 B。
+    assert.match(
+        script,
+        /encodeURIComponent\(\s*writeCode\s*\)\s*}\s*\/rules/,
+        '创建规则应 POST 到 writeCode 对应应用'
+    );
+    assert.doesNotMatch(
+        script,
+        /configuration\/\$\{encodeURIComponent\(\s*currentCode\s*\)\}\/rules/,
+        '创建规则不得在 submit 内使用可变的 currentCode'
+    );
+});

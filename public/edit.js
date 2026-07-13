@@ -126,8 +126,11 @@ document.addEventListener('DOMContentLoaded', function () {
         els.callbackToken.value = '';
         els.aeskey.value = '';
         els.callbackEnabled.checked = !!d.callback_enabled;
+        // 关闭回调后必须清空展示，否则会残留上一次的 URL 造成“仍开启”的错觉。
         if (d.callbackUrl) {
             els.callbackUrlDisplay.textContent = '回调 URL：' + window.location.origin + d.callbackUrl;
+        } else if (els.callbackUrlDisplay) {
+            els.callbackUrlDisplay.textContent = '';
         }
         // 安全设置初始显示（实际开关切换走独立接口 + 版本锁）。
         renderCodeSendPanel(d.code_send_enabled);

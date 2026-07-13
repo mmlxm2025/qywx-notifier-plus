@@ -64,3 +64,11 @@ test('edit.js 敏感项不回填、安全设置走独立接口', () => {
     assert.ok(script.includes('modal.confirm'), '通知密钥操作应用 AppModal');
     assert.ok(!/window\.confirm\s*\(/.test(script), '禁止调用 window.confirm()');
 });
+
+test('edit.js 关闭回调后清空 callback URL 展示', () => {
+    // 历史 bug：仅在 d.callbackUrl 有值时写入，关闭回调后旧 URL 残留。
+    assert.ok(
+        /callbackUrlDisplay\.textContent\s*=\s*['"]['"]/.test(script),
+        '无 callbackUrl 时应清空展示文本'
+    );
+});

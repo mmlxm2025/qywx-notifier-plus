@@ -217,7 +217,8 @@ router.post('/api/notify/:code', async (req, res) => {
 
     // 健壮性：非 JSON Content-Type 或 JSON 解析失败时 req.body 为 undefined，
     // 直接解构会抛 TypeError 被全局兜底捕获返回 500。在此显式校验返回 400。
-    if (!req.body || typeof req.body !== 'object') {
+    // 数组/primitive 同样拒绝（与 requireJsonObjectBody 契约一致），避免静默取不到字段。
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
         return res.status(400).json({ error: '请求体必须是 JSON 格式（Content-Type: application/json）' });
     }
 

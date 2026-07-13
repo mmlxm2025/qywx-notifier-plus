@@ -172,6 +172,43 @@ test('3. 大小写不敏感冲突：OPS-ALERT 与 ops-alert 视为同一编号',
     assert.equal(conflict.scope, 'rule');
 });
 
+// 发送路径回归：getNotificationRuleByApiCode / getConfigurationByCode 必须大小写不敏感。
+// 历史 bug：唯一索引与冲突检查用 lower()，但运行时查询用精确匹配，
+// 导致调用方传 OPS-ALERT 时 404，而 ops-alert 可发送。
+test('3b. getNotificationRuleByApiCode 大小写不敏感命中', async t => {
+    const db = await createIsolatedDatabase(t);
+    await db.init();
+    await insertCompletedApp(db, 'app-a');
+    await insertRule(db, { id: 1, configCode: 'app-a', apiCode: 'ops-alert' });
+    const byUpper = await db.getNotificationRuleByApiCode('OPS-ALERT');
+    assert.ok(byUpper, '大写编号应命中小写入库的规则');
+    assert.equal(byUpper.api_code, 'ops-alert');
+    const byMixed = await db.getNotificationRuleByApiCode('Ops-Alert');
+    assert.ok(byMixed, '混合大小写也应命中');
+    assert.equal(byMixed.id, 1);
+});
+
+test('3c. getConfigurationByCode 大小写不敏感命中', async t => {
+    const db = await createIsolatedDatabase(t);
+    await db.init();
+    await insertCompletedApp(db, 'App-Code-01');
+    const row = await db.getConfigurationByCode('app-code-01');
+    assert.ok(row, '配置 Code 查询应大小写不敏感');
+    assert.equal(row.code, 'App-Code-01', '返回行应保留库内权威大小写');
+});
+
+test('3d. updateConfigurationFields 大小写不敏感写入并返回权威 code', async t => {
+    const db = await createIsolatedDatabase(t);
+    await db.init();
+    await insertCompletedApp(db, 'app-b', { version: 1 });
+    const result = await db.updateConfigurationFields('APP-B', { description: 'updated' }, 1);
+    assert.equal(result.changes, 1, '大小写不同的 code 仍应更新成功');
+    assert.equal(result.code, 'app-b', '应返回库内权威 code');
+    assert.equal(result.version, 2);
+    const row = await db.getConfigurationByCode('app-b');
+    assert.equal(row.description, 'updated');
+});
+
 test('4. 与 configurations.code 冲突：inspectNotifyCodeConflict 命中 configuration', async t => {
     const db = await createIsolatedDatabase(t);
     await db.init();
