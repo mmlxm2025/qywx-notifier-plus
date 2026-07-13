@@ -2,19 +2,20 @@
 REM =====================================================================
 REM 企业微信通知转发服务 - 构建镜像并打包脚本（Windows / 本机构建机）
 REM
-REM 用途：在开发机/构建机上执行，生成 qywx-notifier-plus:1.0.0 镜像
-REM       并打包为 qywx-notifier-plus-1.0.0.tar.gz，供 1Panel 服务器导入。
+REM 用途：按 package.json 版本 + Git 短提交生成可追溯镜像并打包。
 REM
 REM 用法：双击运行，或在命令行执行  build-and-pack.bat
 REM =====================================================================
 setlocal enabledelayedexpansion
 
-REM ---- 镜像信息（如改版本号请同步修改 docker-compose.yml 与导入脚本）----
 set IMAGE_NAME=qywx-notifier-plus
-set IMAGE_TAG=1.0.0
-set ARCHIVE_NAME=qywx-notifier-plus-%IMAGE_TAG%.tar.gz
-
 cd /d "%~dp0\.."
+
+for /f %%i in ('node -p "require('./package.json').version"') do set PACKAGE_VERSION=%%i
+for /f %%i in ('git rev-parse HEAD') do set VCS_REF=%%i
+for /f %%i in ('git rev-parse --short^=7 HEAD') do set SHORT_REF=%%i
+set IMAGE_TAG=%PACKAGE_VERSION%-%SHORT_REF%
+set ARCHIVE_NAME=qywx-notifier-plus-%IMAGE_TAG%.tar.gz
 
 echo.
 echo [1/4] 检查 Docker ...
@@ -26,7 +27,7 @@ if errorlevel 1 (
 
 echo.
 echo [2/4] 构建镜像 %IMAGE_NAME%:%IMAGE_TAG% ...
-docker build -t %IMAGE_NAME%:%IMAGE_TAG% .
+docker build --build-arg VCS_REF=%VCS_REF% --build-arg APP_VERSION=%PACKAGE_VERSION% -t %IMAGE_NAME%:%IMAGE_TAG% .
 if errorlevel 1 (
     echo [错误] 镜像构建失败。
     exit /b 1
@@ -40,10 +41,12 @@ if errorlevel 1 (
     echo [错误] 镜像打包失败。
     exit /b 1
 )
+> "deploy\IMAGE_TAG" echo %IMAGE_TAG%
 
 echo.
 echo [4/4] 完成！产物清单：
 echo     deploy\%ARCHIVE_NAME%
+echo     deploy\IMAGE_TAG
 echo     deploy\docker-compose.yml
 echo     deploy\.env.example
 echo     deploy\import-load.sh

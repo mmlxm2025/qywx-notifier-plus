@@ -1,0 +1,77 @@
+# =====================================================================
+# 企业微信通知转发服务 - 镜像拉取模式编排模板
+#
+# 适用场景：
+#   - 生产部署，服务器无需源码，直接拉取 GHCR 镜像
+#   - 1Panel / 通用 Docker 部署（最常用）
+#   - 离线导入场景（配合 import-load.sh 通过 IMAGE 变量切换本地镜像）
+#
+# 特点：
+#   - 使用 image: 拉取预构建镜像，无需本地构建
+#   - 数据库用命名卷持久化（由 Docker 管理，删除容器数据不丢）
+#   - 通过 IMAGE 环境变量可切换为离线导入的本地镜像
+#   - 包含健康检查
+#
+# 使用方法：
+#   1. 复制本文件与 .env.example 到部署目录
+#   2. cp .env.example .env 并修改 ENCRYPTION_KEY / ADMIN_PASSWORD
+#   3. docker compose pull && docker compose up -d
+#
+# 离线导入：
+#   - 配合 deploy/import-load.sh，它会 docker load 后 export IMAGE=本地镜像
+#   - compose 读取 $IMAGE 优先于下方默认的 GHCR 地址
+# =====================================================================
+
+services:
+  qywx-notifier-plus:
+    # 镜像来源：默认拉取 GHCR；离线导入时由 import-load.sh 设置 IMAGE 环境变量覆盖
+    image: ${IMAGE:-ghcr.io/mmlxm2025/qywx-notifier-plus:latest}
+    container_name: qywx-notifier-plus
+    restart: unless-stopped
+
+    # 端口映射：宿主机IP:宿主机端口:容器端口
+    #   HOST_BIND：0.0.0.0 = 对外开放；127.0.0.1 = 仅本机（配合反向代理）
+    #   HOST_PORT：宿主机端口，默认 12121，被占用时可改（如 8080）
+    #   容器端口 12121 固定不动（由 Dockerfile EXPOSE 决定）
+    ports:
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-12121}:12121"
+
+    # 数据持久化：命名卷，由 Docker / 1Panel 自动管理存储位置
+    # 备份方式见 README-1PANEL.md「备份与恢复」一节
+    volumes:
+      - qywx-notifier-plus-data:/app/database
+
+    # 运行时配置（值来自同目录 .env 文件）
+    environment:
+      - PORT=12121
+      - DB_PATH=/app/database/notifier.db
+      - NODE_ENV=production
+      - WECHAT_API_BASE=${WECHAT_API_BASE:-https://qyapi.weixin.qq.com}
+      # 【必填】加密密钥，32 字节。占位符会被启动校验拦截。
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?请先在 .env 中设置 ENCRYPTION_KEY}
+      # 【必填】管理员密码，至少 8 字符。
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
+      # 反向代理：端口仍对公网开放时必须 false；仅在端口绑定回环后设 loopback 或跳数(1)/CIDR。
+      - TRUST_PROXY=${TRUST_PROXY:-false}
+      # 仅隔离测试实例设置；生产环境留空。
+      - TEST_INSTANCE_ID=${TEST_INSTANCE_ID:-}
+      # ---- 以下为调优项，省略时用代码默认值，需要时在 .env 中开启 ----
+      # - CALLBACK_MAX_BODY_BYTES=102400
+      # - LOGIN_RATE_MAX=10
+      # - NOTIFY_RATE_MAX=60
+      # - SHUTDOWN_TIMEOUT_MS=10000
+
+    # 健康检查（SEC-007）：就绪探测 /health/ready，仅 HTTP 200 视为健康，
+    # 数据库不可用返回 503 时标记不健康。镜像内 Dockerfile 已内置同样配置。
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:12121/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+# 命名卷：由 Docker / 1Panel 自动管理存储位置
+volumes:
+  qywx-notifier-plus-data:
+    name: qywx-notifier-plus-data

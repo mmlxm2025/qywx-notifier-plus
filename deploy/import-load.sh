@@ -11,11 +11,20 @@
 set -euo pipefail
 
 IMAGE_NAME="qywx-notifier-plus"
-IMAGE_TAG="1.0.0"
-ARCHIVE_NAME="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+if [ ! -f IMAGE_TAG ]; then
+  echo "[错误] 缺少 IMAGE_TAG，无法确认镜像版本与归档名称。" >&2
+  exit 1
+fi
+IMAGE_TAG="$(tr -d '\r\n[:space:]' < IMAGE_TAG)"
+if [ -z "$IMAGE_TAG" ]; then
+  echo "[错误] IMAGE_TAG 内容为空。" >&2
+  exit 1
+fi
+ARCHIVE_NAME="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 
 echo
 echo "[1/4] 检查 Docker ..."
@@ -31,7 +40,6 @@ if [ ! -f "$ARCHIVE_NAME" ]; then
   exit 1
 fi
 gunzip -c "$ARCHIVE_NAME" | docker load
-docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:${IMAGE_TAG}" 2>/dev/null || true
 export IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 echo "已导入镜像："
 docker images "${IMAGE_NAME}:${IMAGE_TAG}"
@@ -42,12 +50,19 @@ if [ ! -f ".env" ]; then
   echo "[提示] 未发现 .env，正在从模板生成，请随后编辑真实配置。"
   cp -n .env.example .env
 fi
-# 校验关键变量是否仍为占位符
-if grep -q "change-this-to-a-random-32-char-string" .env 2>/dev/null; then
-  echo "[警告] .env 中 ENCRYPTION_KEY 仍是占位符，请务必修改为 32 位随机字符串！"
+# 校验关键变量是否仍为占位符（SEC-001：发现占位值必须退出，禁止带病启动）
+PLACEHOLDER_ERROR=0
+if grep -Eq "ENCRYPTION_KEY\s*=\s*(change-this-to-a-random-32-char-string|your-32-character-encryption-key-here|default-key-for-development-only)" .env 2>/dev/null; then
+  echo "[错误] .env 中 ENCRYPTION_KEY 仍是占位符，请修改为 32 位随机字符串（推荐 openssl rand -hex 32）。"
+  PLACEHOLDER_ERROR=1
 fi
-if grep -q "change-this-to-a-strong-password" .env 2>/dev/null; then
-  echo "[警告] .env 中 ADMIN_PASSWORD 仍是占位符，请务必修改！"
+if grep -Eq "ADMIN_PASSWORD\s*=\s*(change-this-to-a-strong-password|your-secure-password)" .env 2>/dev/null; then
+  echo "[错误] .env 中 ADMIN_PASSWORD 仍是占位符，请设置强密码。"
+  PLACEHOLDER_ERROR=1
+fi
+if [ "$PLACEHOLDER_ERROR" -ne 0 ]; then
+  echo "[错误] 检测到未修改的占位配置，拒绝启动。请编辑 .env 后重试。"
+  exit 1
 fi
 
 echo
@@ -66,4 +81,4 @@ else
 fi
 
 echo
-echo "部署完成。默认访问地址：http://<服务器IP>:<HOST_PORT>"
+echo "部署完成。请按 README-1PANEL.md 选择 HTTPS 反代或直接端口访问方式。"

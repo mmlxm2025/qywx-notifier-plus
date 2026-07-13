@@ -13,7 +13,7 @@
 - 已安装 1Panel，并在 1Panel 的「容器」页面安装了 Docker。
 - 服务器能够访问 `ghcr.io`。
 - 知道服务器公网 IP；若只在内网使用，也可以使用内网 IP。
-- 服务器安全组和防火墙允许访问准备使用的端口，默认是 `12121`。
+- 已决定访问方式：推荐使用 1Panel HTTPS 反向代理；仅在可信网络临时使用时才直接开放应用端口。
 
 在 1Panel 左侧打开「终端」，或通过 SSH 登录服务器，然后运行：
 
@@ -59,10 +59,10 @@ cp .env.example .env
 
 ```bash
 # 第一个结果用于 ENCRYPTION_KEY，必须正好是 32 个字符
-openssl rand -hex 16
+openssl rand -hex 32
 
 # 第二个结果用于 ADMIN_PASSWORD，可直接使用这个随机强密码
-openssl rand -hex 16
+openssl rand -hex 32
 ```
 
 请把两次输出暂时复制到安全的位置，随后编辑文件：
@@ -76,7 +76,8 @@ nano .env
 修改后的内容类似下面这样。示例值不能直接照抄，请替换成刚才生成的真实随机值：
 
 ```ini
-# 浏览器访问端口；没有冲突时保持 12121
+# 推荐的同机 HTTPS 反代：应用端口只监听回环地址
+HOST_BIND=127.0.0.1
 HOST_PORT=12121
 
 # 必须是 32 个字符；首次保存业务数据后不要再更换
@@ -88,6 +89,9 @@ ADMIN_PASSWORD=这里粘贴第二次生成的随机强密码
 
 # 企业微信官方 API 地址，通常不需要修改
 WECHAT_API_BASE=https://qyapi.weixin.qq.com
+
+# 仅当 HOST_BIND=127.0.0.1 且反代与应用在同机时使用 loopback
+TRUST_PROXY=loopback
 ```
 
 保存文件后，限制其他系统用户读取：
@@ -100,11 +104,13 @@ chmod 600 .env
 
 | 变量 | 是否必改 | 说明 |
 |------|----------|------|
+| `HOST_BIND` | 按部署方式 | HTTPS 同机反代用 `127.0.0.1`；直接访问用 `0.0.0.0` |
 | `HOST_PORT` | 按需 | 浏览器访问端口，默认 `12121`；端口被占用时可改成 `8080` 等 |
 | `ENCRYPTION_KEY` | 必改 | 加密数据库中的企业微信密钥，必须为 32 个字符 |
 | `ADMIN_USERNAME` | 建议修改 | 管理页面登录账号，默认 `admin` |
 | `ADMIN_PASSWORD` | 必改 | 管理页面登录密码，建议使用上面生成的随机值 |
 | `WECHAT_API_BASE` | 不改 | 企业微信 API 地址 |
+| `TRUST_PROXY` | 按部署方式 | 回环反代用 `loopback`；端口可被客户端直连时必须为 `false` |
 
 重要提醒：
 
@@ -161,15 +167,11 @@ docker compose logs --tail=100
 
 持续查看日志可使用 `docker compose logs -f`，按 `Ctrl+C` 只会退出日志查看，不会停止服务。
 
-### 第 5 步：开放端口并访问
+### 第 5 步：配置访问入口
 
-在云服务器安全组和 1Panel 防火墙中放行 TCP `12121` 端口。若修改过 `HOST_PORT`，应放行修改后的端口。
+推荐方式是 HTTPS 反向代理：保持 `HOST_BIND=127.0.0.1`、`TRUST_PROXY=loopback`，不要在安全组或防火墙放行应用端口。在 1Panel「网站」中创建反向代理，代理地址填写 `http://127.0.0.1:12121`（若修改过 `HOST_PORT`，同步替换），然后为域名启用 HTTPS。浏览器只访问 `https://你的域名`。
 
-浏览器打开：
-
-```text
-http://服务器IP:12121
-```
+仅在可信内网或临时调试时才直接访问端口：设置 `HOST_BIND=0.0.0.0`、`TRUST_PROXY=false`，并只向可信来源放行 `HOST_PORT`。不要通过公网明文 HTTP 登录或传递通知密钥。
 
 使用 `.env` 中的 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 登录。登录后再按页面提示填写企业微信的 CorpID、CorpSecret、AgentID、回调 Token 和 EncodingAESKey。
 
@@ -198,7 +200,7 @@ docker compose ps
 # 查看健康状态
 docker inspect --format='{{.State.Health.Status}}' qywx-notifier-plus
 
-# 从服务器本机测试登录页
+# 从服务器本机测试应用入口（HOST_PORT 修改后同步替换）
 curl -I http://127.0.0.1:12121/login
 ```
 
@@ -295,9 +297,9 @@ docker compose logs --tail=200
 
 1. `docker compose ps` 中容器是否运行。
 2. `curl -I http://127.0.0.1:12121/login` 是否有响应。
-3. 云服务器安全组是否放行 TCP 端口。
-4. 1Panel 防火墙或系统防火墙是否放行端口。
-5. 浏览器地址是否使用了正确的服务器 IP 和 `HOST_PORT`。
+3. HTTPS 反代模式下，1Panel 上游是否指向正确的 `127.0.0.1:HOST_PORT`，证书和域名是否生效。
+4. 直接访问模式下，`HOST_BIND` 是否为 `0.0.0.0`，安全组和防火墙是否只向可信来源放行端口。
+5. `TRUST_PROXY` 是否与访问方式匹配；公网可直连时必须为 `false`。
 
 ### 4. 无法从 `ghcr.io` 拉取镜像
 
@@ -316,7 +318,7 @@ chmod +x deploy/build-and-pack.sh
 ./deploy/build-and-pack.sh
 ```
 
-Windows 可以运行 `deploy\build-and-pack.bat`。将生成的 `qywx-notifier-plus-1.0.0.tar.gz`、`deploy/docker-compose.yml`、`deploy/.env.example` 和 `deploy/import-load.sh` 上传到服务器同一目录，然后执行：
+Windows 可以运行 `deploy\build-and-pack.bat`。脚本会按 `package.json` 版本和 Git 短提交号生成镜像包，同时生成 `deploy/IMAGE_TAG`。将生成的 `qywx-notifier-plus-<版本>-<提交>.tar.gz`、`IMAGE_TAG`、`deploy/docker-compose.yml`、`deploy/.env.example`、`deploy/import-load.sh` 和本说明上传到服务器同一目录，然后执行：
 
 ```bash
 cd /opt/qywx-notifier-plus
@@ -329,7 +331,7 @@ chmod +x import-load.sh
 ## 十一、安全建议
 
 - `.env` 权限保持为 `600`，不要提交到 Git 或公开分享。
-- 管理端口尽量只向可信 IP 或内网开放。
-- 对公网使用时，建议通过 1Panel 网站功能配置反向代理和 HTTPS。
+- 对公网使用时，使用 `HOST_BIND=127.0.0.1`、`TRUST_PROXY=loopback`，并通过 1Panel 配置 HTTPS 反向代理。
+- 只有可信内网或临时调试才使用 `HOST_BIND=0.0.0.0`；此时保持 `TRUST_PROXY=false`。
 - 定期备份 `qywx-notifier-plus-data` 命名卷。
 - 不要把日志、`.env`、数据库文件或带有企业微信凭据的截图发到公开 Issue。

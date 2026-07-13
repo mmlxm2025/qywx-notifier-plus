@@ -17,9 +17,10 @@ services:
     restart: unless-stopped
 
     # 端口映射：宿主机端口:容器端口
-    # 左侧 12121 是你从外部访问的端口，可按需修改；右侧 12121 固定不动
+    # HTTPS 同机反代建议 HOST_BIND=127.0.0.1；直接访问才使用 0.0.0.0。
+    # 中间的 HOST_PORT 可按需修改；容器端口 12121 固定不动。
     ports:
-      - "${HOST_PORT:-12121}:12121"
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-12121}:12121"
 
     # 数据持久化：把容器内 /app/database 挂到 Docker 命名卷
     volumes:
@@ -34,14 +35,19 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?请先在 .env 中设置 ENCRYPTION_KEY}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
+      # 端口仍对公网开放时必须保持 false；仅在端口改为回环监听后设为 loopback。
+      - TRUST_PROXY=${TRUST_PROXY:-false}
+      # 仅隔离测试实例设置；生产环境留空。
+      - TEST_INSTANCE_ID=${TEST_INSTANCE_ID:-}
 
-    # 健康检查（镜像已内置，此处仅作编排层声明）
+    # 健康检查（SEC-007）：就绪探测 /health/ready，仅 HTTP 200 视为健康，
+    # 数据库不可用返回 503 时标记不健康。镜像内 Dockerfile 已内置同样配置。
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:12121/login',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:12121/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
 # 命名卷：由 Docker / 1Panel 自动管理存储位置
 volumes:

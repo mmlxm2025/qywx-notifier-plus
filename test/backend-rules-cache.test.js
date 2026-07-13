@@ -84,6 +84,10 @@ function patchNotifierDependencies(t, {
     saveRuleId = 11,
     sendResponse = { errcode: 0, errmsg: 'ok', msgid: 'msg-1' }
 } = {}) {
+    // SEC-001/SEC-005：注入合法 32 字节加密密钥，供 GCM 加解密单例使用。
+    if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length !== 32) {
+        withEnv(t, 'ENCRYPTION_KEY', 'a'.repeat(32));
+    }
     const Database = require('../src/core/database');
     const CryptoService = require('../src/core/crypto');
     const WeChatService = require('../src/core/wechat');
@@ -120,6 +124,67 @@ function patchNotifierDependencies(t, {
     replaceForTest(t, Database.prototype, 'listNotificationRules', async function listNotificationRules(configCode) {
         calls.listConfigCode = configCode;
         return rule ? [{ ...rule }] : [];
+    });
+    // 多应用（2026-07-04）：列表序列化批量规则计数与重复身份标记所需桩。
+    replaceForTest(t, Database.prototype, 'countRulesByConfigCodes', async function countRulesByConfigCodes(codes) {
+        const map = {};
+        for (const code of codes) map[code] = { rule_count: 0, enabled_rule_count: 0 };
+        return map;
+    });
+    replaceForTest(t, Database.prototype, 'findCompletedByCorpidAgentId', async function findCompletedByCorpidAgentId() { return null; });
+    replaceForTest(t, Database.prototype, 'findDuplicatesByCorpidAgentId', async function findDuplicatesByCorpidAgentId() { return []; });
+    // 多应用（P0-03）：规则聚合事务桩。identity={configCode}|{ruleId}；mutation(tx, app) 执行规则写。
+    // 桩内复用 saveNotificationRule/updateNotificationRule/regenerate/delete 的存档逻辑以兼容旧断言。
+    replaceForTest(t, Database.prototype, 'mutateRuleWithAppVersion', async function mutateRuleWithAppVersion(identity, expectedVersion, mutation) {
+        const app = { ...config };
+        return { rule: await mutation({
+            run: async (sql, params) => {
+                const s = String(sql || '').toUpperCase();
+                if (s.includes('INSERT')) {
+                    calls.savedRule = {
+                        config_code: identity.configCode,
+                        api_code: params[1],
+                        name: params[2],
+                        touser: params[3],
+                        toparty: params[4],
+                        totag: params[5],
+                        is_all: params[6],
+                        estimated_count: params[7]
+                    };
+                    return { lastID: saveRuleId, changes: 1 };
+                }
+                if (s.includes('UPDATE') && s.includes('API_CODE')) {
+                    calls.regeneratedRule = { id: params[1], apiCode: params[0] };
+                    return { changes: 1 };
+                }
+                if (s.includes('UPDATE') && s.includes('ENABLED')) {
+                    return { changes: 1 };
+                }
+                if (s.includes('UPDATE')) {
+                    calls.updatedRule = {
+                        id: params[6],
+                        name: params[0],
+                        touser: params[1],
+                        toparty: params[2],
+                        totag: params[3],
+                        is_all: params[4],
+                        estimated_count: params[5]
+                    };
+                    return { changes: 1 };
+                }
+                if (s.includes('DELETE')) {
+                    calls.deletedRuleId = identity.ruleId;
+                    return { changes: 1 };
+                }
+                return { changes: 0 };
+            },
+            get: async (sql, params) => {
+                const source = ruleById || rule;
+                if (source && Number(params[0]) === Number(source.id)) return { ...source };
+                return null;
+            },
+            all: async () => []
+        }, app), app_version: (Number(config.version) || 1) + 1 };
     });
     replaceForTest(t, Database.prototype, 'saveNotificationRule', async function saveNotificationRule(saved) {
         calls.savedRule = { ...saved };
@@ -168,7 +233,7 @@ function patchNotifierDependencies(t, {
     };
 }
 
-async function request(app, method, path, body) {
+async function request(app, method, path, body, extraHeaders = {}) {
     const server = app.listen(0);
     await new Promise(resolve => server.once('listening', resolve));
     const { port } = server.address();
@@ -186,7 +251,8 @@ async function request(app, method, path, body) {
                     ...(payload ? {
                         'content-type': 'application/json',
                         'content-length': Buffer.byteLength(payload)
-                    } : {})
+                    } : {}),
+                    ...extraHeaders
                 }
             }, res => {
                 let responseBody = '';
@@ -248,7 +314,7 @@ test('createRule normalizes recipient fields and creates an independent API code
         toparty: '2| 3',
         totag: '',
         estimated_count: '2'
-    });
+    }, { expectedVersion: 1 });
 
     assert.equal(calls.savedRule.config_code, 'base-code');
     assert.equal(calls.savedRule.name, 'Ops');
@@ -262,11 +328,11 @@ test('createRule normalizes recipient fields and creates an independent API code
     assert.equal(result.apiUrl, `/api/notify/${calls.savedRule.api_code}`);
 });
 
-test('listConfigurations returns sanitized selectable configuration codes', async t => {
+test('listConfigurations returns unified lifecycle/warnings/capabilities per row', async t => {
     const { notifier, calls } = patchNotifierDependencies(t, {
         configList: [
-            completedConfig({ code: 'base-code', description: '基础告警' }),
-            incompleteConfig({ code: 'callback-only', description: '回调待完善' })
+            completedConfig({ code: 'base-code', description: '基础告警', version: 1, app_enabled: 1 }),
+            incompleteConfig({ code: 'callback-only', description: '回调待完善', version: 1, app_enabled: 1 })
         ]
     });
 
@@ -274,24 +340,21 @@ test('listConfigurations returns sanitized selectable configuration codes', asyn
     const result = await notifier.listConfigurations();
 
     assert.equal(calls.listConfigurations, true);
-    assert.deepEqual(result, {
-        configurations: [
-            {
-                code: 'base-code',
-                agentid: 100001,
-                description: '基础告警',
-                completed: true,
-                created_at: undefined
-            },
-            {
-                code: 'callback-only',
-                agentid: 0,
-                description: '回调待完善',
-                completed: false,
-                created_at: undefined
-            }
-        ]
-    });
+    const byCode = Object.fromEntries(result.configurations.map(c => [c.code, c]));
+
+    // 多应用：每行统一输出 lifecycle/capabilities/warnings/version（前端不再自行推导）。
+    assert.equal(byCode['base-code'].lifecycle_status, 'active');
+    assert.equal(byCode['base-code'].completed, true);
+    assert.equal(byCode['base-code'].version, 1);
+    assert.equal(byCode['base-code'].app_enabled, true);
+    assert.ok(Array.isArray(byCode['base-code'].warnings));
+    assert.ok(typeof byCode['base-code'].capabilities === 'object');
+
+    assert.equal(byCode['callback-only'].lifecycle_status, 'draft');
+    assert.equal(byCode['callback-only'].completed, false);
+    // 草稿不能管理规则/切换。
+    assert.equal(byCode['callback-only'].capabilities.can_manage_rules, false);
+    assert.equal(byCode['callback-only'].capabilities.can_toggle, false);
 });
 
 test('createRule stores all-member rules as touser @all semantics', async t => {
@@ -303,7 +366,7 @@ test('createRule stores all-member rules as touser @all semantics', async t => {
         touser: ['alice'],
         toparty: ['2'],
         totag: ['9']
-    });
+    }, { expectedVersion: 1 });
 
     assert.equal(calls.savedRule.is_all, 1);
     assert.equal(calls.savedRule.touser, '');
@@ -324,7 +387,7 @@ test('updateRule keeps existing all-member scope when is_all is omitted', async 
         })
     });
 
-    await notifier.updateRule(7, { name: 'Renamed' });
+    await notifier.updateRule(7, { name: 'Renamed' }, { expectedVersion: 1 });
 
     assert.equal(calls.updatedRule.name, 'Renamed');
     assert.equal(calls.updatedRule.is_all, 1);
@@ -403,7 +466,7 @@ test('rule management routes require auth and regenerate API code', async t => {
     assert.equal(calls.listConfigCode, 'base-code');
     assert.deepEqual(JSON.parse(res.body).rules[0].apiUrl, '/api/notify/rule-code');
 
-    res = await request(app, 'POST', '/api/rules/7/regenerate');
+    res = await request(app, 'POST', '/api/rules/7/regenerate', undefined, { 'If-Match': '1' });
     assert.equal(res.statusCode, 200);
     const body = JSON.parse(res.body);
     assert.match(body.api_code, /^[0-9a-f-]{36}$/);
@@ -413,7 +476,7 @@ test('rule management routes require auth and regenerate API code', async t => {
 
 test('configuration list route requires auth and returns selectable codes', async t => {
     const { calls } = patchNotifierDependencies(t, {
-        configList: [completedConfig({ code: 'base-code', description: '基础告警' })]
+        configList: [completedConfig({ code: 'base-code', description: '基础告警', version: 1, app_enabled: 1 })]
     });
     const app = buildApp(t);
 
@@ -421,14 +484,15 @@ test('configuration list route requires auth and returns selectable codes', asyn
 
     assert.equal(res.statusCode, 200);
     assert.equal(calls.listConfigurations, true);
-    assert.deepEqual(JSON.parse(res.body), {
-        configurations: [{
-            code: 'base-code',
-            agentid: 100001,
-            description: '基础告警',
-            completed: true
-        }]
-    });
+    const body = JSON.parse(res.body);
+    assert.equal(body.configurations.length, 1);
+    // 多应用：列表返回统一 lifecycle/版本/能力字段。
+    const row = body.configurations[0];
+    assert.equal(row.code, 'base-code');
+    assert.equal(row.description, '基础告警');
+    assert.equal(row.completed, true);
+    assert.equal(row.lifecycle_status, 'active');
+    assert.ok(Number.isInteger(row.version));
 });
 
 test('api docs route is available from the documented top-level path', async t => {

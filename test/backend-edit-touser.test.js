@@ -19,7 +19,24 @@ function replaceForTest(t, object, property, value) {
     });
 }
 
-function patchNotifierDependencies(t, { config, duplicate = null, memberError = null } = {}) {
+function patchNotifierDependencies(t, {
+    config,
+    duplicate = null,
+    memberError = null,
+    identityConflict = false,
+    earlyIdentityConflict = false
+} = {}) {
+    // SEC-001/SEC-005：注入合法 32 字节加密密钥，供 GCM 加解密单例使用。
+    const config_mod = require('../src/core/config');
+    if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length !== 32) {
+        const hadValue = Object.prototype.hasOwnProperty.call(process.env, 'ENCRYPTION_KEY');
+        const original = process.env.ENCRYPTION_KEY;
+        process.env.ENCRYPTION_KEY = 'a'.repeat(32);
+        t.after(() => {
+            if (hadValue) process.env.ENCRYPTION_KEY = original;
+            else delete process.env.ENCRYPTION_KEY;
+        });
+    }
     const Database = require('../src/core/database');
     const CryptoService = require('../src/core/crypto');
     const WeChatService = require('../src/core/wechat');
@@ -44,6 +61,39 @@ function patchNotifierDependencies(t, { config, duplicate = null, memberError = 
         calls.updatedConfig = { ...updated };
         return { code: updated.code };
     });
+    // 多应用（2026-07-04）：touched-field 更新 + 版本乐观锁 + 身份判重桩。
+    replaceForTest(t, Database.prototype, 'updateConfigurationFields', async function updateConfigurationFields(code, fields, expectedVersion) {
+        if (expectedVersion !== undefined && expectedVersion !== null
+            && Number(config.version) !== Number(expectedVersion)) {
+            return { code, changes: 0, version: Number(config.version) };
+        }
+        calls.updatedConfig = { code, ...fields };
+        const newVersion = (Number(config.version) || 1) + 1;
+        return { code, changes: 1, version: newVersion };
+    });
+    // 多应用（R-P0-01）：编辑应用的原子身份事务桩。
+    replaceForTest(t, Database.prototype, 'updateConfigurationAtomic', async function updateConfigurationAtomic(code, fields, expectedVersion, opts = {}) {
+        if (expectedVersion !== undefined && expectedVersion !== null
+            && Number(config.version) !== Number(expectedVersion)) {
+            const e = new Error('version_conflict');
+            e.__updateCause = 'version_conflict';
+            e.__currentVersion = Number(config.version);
+            throw e;
+        }
+        if (identityConflict && opts && opts.checkIdentity) {
+            const e = new Error('identity_conflict');
+            e.__updateCause = 'identity_conflict';
+            e.__existingCode = 'other-code';
+            throw e;
+        }
+        calls.updatedConfig = { code, ...fields };
+        const newVersion = (Number(config.version) || 1) + 1;
+        return { code, version: newVersion };
+    });
+    replaceForTest(t, Database.prototype, 'findCompletedByCorpidAgentId', async function findCompletedByCorpidAgentId() {
+        return earlyIdentityConflict ? { code: 'existing-app' } : null;
+    });
+    replaceForTest(t, Database.prototype, 'getIncompleteConfigurationByCorpId', async function getIncompleteConfigurationByCorpId() { return null; });
 
     replaceForTest(t, CryptoService.prototype, 'decrypt', function decrypt(value) {
         assert.equal(value, 'encrypted-secret');
@@ -71,6 +121,7 @@ function patchNotifierDependencies(t, { config, duplicate = null, memberError = 
             { userid: 'bob', name: '', email: 'hidden' }
         ];
     });
+    replaceForTest(t, WeChatService.prototype, 'invalidateToken', function invalidateToken() {});
 
     clearModule('../src/services/notifier');
     t.after(() => {
@@ -92,11 +143,13 @@ function completedConfig(overrides = {}) {
         callback_token: 'old-token',
         encrypted_encoding_aes_key: 'old-key',
         callback_enabled: 1,
+        app_enabled: 1,
+        version: 1,
         ...overrides
     };
 }
 
-async function request(app, method, path, body) {
+async function request(app, method, path, body, extraHeaders = {}) {
     const server = app.listen(0);
     await new Promise(resolve => server.once('listening', resolve));
     const { port } = server.address();
@@ -114,7 +167,8 @@ async function request(app, method, path, body) {
                     ...(payload ? {
                         'content-type': 'application/json',
                         'content-length': Buffer.byteLength(payload)
-                    } : {})
+                    } : {}),
+                    ...extraHeaders
                 }
             }, res => {
                 let responseBody = '';
@@ -149,14 +203,12 @@ function buildApp(t, { authenticated = true } = {}) {
 }
 
 test('WeChatService.getDepartmentUsers calls user/simplelist with fetch_child=1', async t => {
-    const axios = require('axios');
-    const originalGet = axios.get;
-    t.after(() => {
-        axios.get = originalGet;
-    });
+    const WeChatService = require('../src/core/wechat');
+    const wechat = new WeChatService('https://qyapi.example');
 
     let call;
-    axios.get = async (url, options) => {
+    const originalGet = wechat.axios.get;
+    wechat.axios.get = async (url, options) => {
         call = { url, options };
         return {
             data: {
@@ -165,9 +217,7 @@ test('WeChatService.getDepartmentUsers calls user/simplelist with fetch_child=1'
             }
         };
     };
-
-    const WeChatService = require('../src/core/wechat');
-    const wechat = new WeChatService('https://qyapi.example');
+    t.after(() => { wechat.axios.get = originalGet; });
 
     assert.equal(typeof wechat.getDepartmentUsers, 'function');
     const users = await wechat.getDepartmentUsers('token-1', 7);
@@ -182,21 +232,17 @@ test('WeChatService.getDepartmentUsers calls user/simplelist with fetch_child=1'
 });
 
 test('WeChatService.getDepartmentUsers throws formatted error when WeChat returns nonzero errcode', async t => {
-    const axios = require('axios');
-    const originalGet = axios.get;
-    t.after(() => {
-        axios.get = originalGet;
-    });
+    const WeChatService = require('../src/core/wechat');
+    const wechat = new WeChatService('https://qyapi.example');
 
-    axios.get = async () => ({
+    const originalGet = wechat.axios.get;
+    wechat.axios.get = async () => ({
         data: {
             errcode: 60011,
             errmsg: 'no permission'
         }
     });
-
-    const WeChatService = require('../src/core/wechat');
-    const wechat = new WeChatService('https://qyapi.example');
+    t.after(() => { wechat.axios.get = originalGet; });
 
     await assert.rejects(
         () => wechat.getDepartmentUsers('token-1'),
@@ -205,14 +251,12 @@ test('WeChatService.getDepartmentUsers throws formatted error when WeChat return
 });
 
 test('WeChatService.getAgentInfo calls agent/get with AgentID', async t => {
-    const axios = require('axios');
-    const originalGet = axios.get;
-    t.after(() => {
-        axios.get = originalGet;
-    });
+    const WeChatService = require('../src/core/wechat');
+    const wechat = new WeChatService('https://qyapi.example');
 
     let call;
-    axios.get = async (url, options) => {
+    const originalGet = wechat.axios.get;
+    wechat.axios.get = async (url, options) => {
         call = { url, options };
         return {
             data: {
@@ -222,9 +266,7 @@ test('WeChatService.getAgentInfo calls agent/get with AgentID', async t => {
             }
         };
     };
-
-    const WeChatService = require('../src/core/wechat');
-    const wechat = new WeChatService('https://qyapi.example');
+    t.after(() => { wechat.axios.get = originalGet; });
 
     assert.equal(typeof wechat.getAgentInfo, 'function');
     const result = await wechat.getAgentInfo('token-1', 100001);
@@ -345,10 +387,11 @@ test('notifier.getConfigMembers rejects unfinished configurations', async t => {
         config: completedConfig({ encrypted_corpsecret: '', touser: 'alice' })
     });
 
+    // 多应用（二次复验 P1-06）：未完成改 409 APP_NOT_COMPLETED，与其它接口语义一致。
     assert.equal(typeof notifier.getConfigMembers, 'function');
     await assert.rejects(
         () => notifier.getConfigMembers('code-1'),
-        /配置尚未完成/
+        error => error.statusCode === 409 && error.businessCode === 'APP_NOT_COMPLETED'
     );
 });
 
@@ -370,44 +413,53 @@ test('notifier.getConfigMembers rejects missing configuration with 404 semantics
     );
 });
 
-test('updateConfiguration normalizes touser and preserves other fields when only touser is passed', async t => {
+test('updateConfiguration normalizes touser via touched-field update (only touser is written)', async t => {
     const { notifier, calls } = patchNotifierDependencies(t, { config: completedConfig() });
 
+    // 多应用（§6.4）：必须携带版本，DAO 只写实际触摸的列。
     await notifier.updateConfiguration('code-1', {
         touser: [' alice ', 'bob', '', 'alice', ' bob ']
-    });
+    }, { expectedVersion: 1 });
 
-    assert.deepEqual(calls.duplicateLookup, {
-        corpid: 'corp-1',
-        agentid: 100001,
-        touser: 'alice|bob'
-    });
-    assert.equal(calls.updatedConfig.corpid, 'corp-1');
-    assert.equal(calls.updatedConfig.agentid, 100001);
+    // touched-field：只写 touser，不把 description/callback_token 等未触摸字段覆盖回去。
     assert.equal(calls.updatedConfig.touser, 'alice|bob');
-    assert.equal(calls.updatedConfig.description, 'old description');
-    assert.equal(calls.updatedConfig.callback_token, 'old-token');
+    assert.equal(calls.updatedConfig.description, undefined, '未触摸字段不应写入');
+    assert.equal(calls.updatedConfig.callback_token, undefined);
+    assert.equal(calls.updatedConfig.corpid, undefined);
 });
 
 test('updateConfiguration rejects explicitly empty touser', async t => {
     const { notifier } = patchNotifierDependencies(t, { config: completedConfig() });
 
     await assert.rejects(
-        () => notifier.updateConfiguration('code-1', { touser: [' ', ''] }),
+        () => notifier.updateConfiguration('code-1', { touser: [' ', ''] }, { expectedVersion: 1 }),
         /请至少选择一个成员/
     );
 });
 
-test('updateConfiguration rejects duplicate target configuration with status 409', async t => {
-    const { notifier } = patchNotifierDependencies(t, {
+test('updateConfiguration rejects AgentID identity conflict with status 409', async t => {
+    // 多应用（R-P0-01）：身份判重移入事务，由 updateConfigurationAtomic 在事务内检查。
+    const { notifier } = patchNotifierDependencies(t, { config: completedConfig(), identityConflict: true });
+
+    await assert.rejects(
+        () => notifier.updateConfiguration('code-1', { agentid: 100002 }, { expectedVersion: 1 }),
+        error => error.statusCode === 409 && error.businessCode === 'APP_IDENTITY_CONFLICT'
+    );
+});
+
+test('updateConfiguration fast-fails known AgentID identity conflict before WeChat validation', async t => {
+    const { notifier, calls } = patchNotifierDependencies(t, {
         config: completedConfig(),
-        duplicate: { code: 'other-code' }
+        earlyIdentityConflict: true
     });
 
     await assert.rejects(
-        () => notifier.updateConfiguration('code-1', { touser: 'alice|bob' }),
-        error => error.statusCode === 409 && /配置已存在/.test(error.message)
+        () => notifier.updateConfiguration('code-1', { agentid: 100002 }, { expectedVersion: 1 }),
+        error => error.statusCode === 409
+            && error.businessCode === 'APP_IDENTITY_CONFLICT'
+            && error.details.existing_code === 'existing-app'
     );
+    assert.equal(calls.agentInfo, null, '已知身份冲突不应调用企业微信在线验证');
 });
 
 test('GET /api/configuration/:code/users requires auth route and returns members', async t => {
@@ -526,9 +578,12 @@ test('GET /api/configuration/:code/users maps unfinished configuration to 400', 
 });
 
 test('GET /api/configuration/:code/users maps WeChat permission failures to 400', async t => {
+    // 多应用（P2-01）：路由统一 sendError，service 层负责抛出带 statusCode 的稳定错误。
     const { notifier } = patchNotifierDependencies(t, { config: completedConfig() });
     notifier.getConfigMembers = async () => {
-        throw new Error('\u83b7\u53d6\u6210\u5458\u5217\u8868\u5931\u8d25: no permission (\u9519\u8bef\u7801: 60011)');
+        const e = new Error('企业微信凭证无效或 AgentID 不匹配');
+        e.statusCode = 400; e.businessCode = 'WECHAT_CREDENTIAL_INVALID';
+        throw e;
     };
     const app = buildApp(t);
 
@@ -549,27 +604,35 @@ test('GET /api/configuration/:code/users maps unknown failures to 500', async t 
     assert.equal(res.statusCode, 500);
 });
 
-test('PUT /api/configuration/:code maps known errors to 404, 400, and 409', async t => {
+test('PUT /api/configuration/:code serializes statusCode and businessCode via sendError', async t => {
+    // 多应用（§6.9）：service 错误携带 statusCode + businessCode，路由不再用中文串匹配。
     const { notifier } = patchNotifierDependencies(t, { config: completedConfig() });
     const app = buildApp(t);
 
     notifier.updateConfiguration = async () => {
-        throw new Error('无效的code，未找到配置');
+        const e = new Error('无效的code，未找到配置');
+        e.statusCode = 404; e.businessCode = 'APP_NOT_FOUND';
+        throw e;
     };
-    let res = await request(app, 'PUT', '/api/configuration/missing', { touser: ['alice'] });
+    let res = await request(app, 'PUT', '/api/configuration/missing', { touser: ['alice'] }, { 'If-Match': '1' });
     assert.equal(res.statusCode, 404);
+    assert.equal(JSON.parse(res.body).code, 'APP_NOT_FOUND');
 
     notifier.updateConfiguration = async () => {
-        throw new Error('请至少选择一个成员');
+        const e = new Error('请至少选择一个成员');
+        e.statusCode = 400; e.businessCode = 'INVALID_INPUT';
+        throw e;
     };
-    res = await request(app, 'PUT', '/api/configuration/code-1', { touser: [] });
+    res = await request(app, 'PUT', '/api/configuration/code-1', { touser: [] }, { 'If-Match': '1' });
     assert.equal(res.statusCode, 400);
+    assert.equal(JSON.parse(res.body).code, 'INVALID_INPUT');
 
     notifier.updateConfiguration = async () => {
-        const error = new Error('相同企业、应用和接收人员的配置已存在');
-        error.statusCode = 409;
-        throw error;
+        const e = new Error('应用已在其他页面更新');
+        e.statusCode = 409; e.businessCode = 'APP_VERSION_CONFLICT';
+        throw e;
     };
-    res = await request(app, 'PUT', '/api/configuration/code-1', { touser: ['alice'] });
+    res = await request(app, 'PUT', '/api/configuration/code-1', { touser: ['alice'] }, { 'If-Match': '1' });
     assert.equal(res.statusCode, 409);
+    assert.equal(JSON.parse(res.body).code, 'APP_VERSION_CONFLICT');
 });

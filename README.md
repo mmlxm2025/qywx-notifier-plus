@@ -10,8 +10,34 @@
 - 增加自定义 API 规则：每个 API 对应一组独立选择的通知对象。
 - 支持按规则管理接收成员，并为规则生成独立的调用地址。
 - 增加 GitHub Actions，自动测试并发布独立命名的 Docker 镜像。
+- **多应用管理（2026-07-04）**：同一企业可接入多个不同 AgentID 的自建应用，按企业分组；新增应用总开关、事务级联删除、版本乐观锁（If-Match）、统一生命周期状态与稳定错误码。详见下方「多应用管理」。
+
+## 多应用管理
+
+一个应用 = 企业微信一个自建应用（企业 + AgentID + 凭证 + 默认接收人）。规则挂在应用下。
+
+**管理页面**（登录后）：
+- `/` 应用总览：按企业分组，显示状态（待完善/运行中/已暂停）、接收人数、规则数；行内总开关、删除预览。
+- `/new` 新建向导：四步（回调 → 凭证 → 接收人 → 确认），支持草稿恢复。
+- `/edit?code=` 编辑页：基本信息、企业凭证、回调、默认接收人、安全设置（Code 发送开关 / 通知密钥）。
+- `/rules?code=` 接收规则：显示所属应用与状态。
+
+**三层发送开关**（优先级从高到低）：
+```
+配置 Code：app_enabled AND code_send_enabled AND notify_auth_ok
+规则 API ： app_enabled AND rule.enabled       AND notify_auth_ok
+```
+暂停应用（`app_enabled=false`）会拒绝配置 Code 与全部规则 API 的发送，但不影响编辑、规则管理与安全设置——便于修复后恢复。
+
+**并发控制**：所有应用聚合写操作需携带 `If-Match: <version>` 头（版本来自列表/详情）。多页面同时编辑时，过期版本不会静默覆盖他人修改（`409 APP_VERSION_CONFLICT`）。
+
+**兼容与回滚**：`app_enabled` / `version` 是加法列，旧代码可忽略并运行；但旧版本不会执行应用总开关与版本控制，回滚不是行为等价——回滚前应停止外部通知流量，或把需暂停应用的 Code/规则开关逐一关闭。详情接口不再返回回调 Token 明文（新 UI 不需要）。
+
+完整 API 与错误码见应用内 `/api-docs.html` 的「应用管理 API」章节。
 
 ## 快速开始
+
+> 运行环境要求：**Node.js 24 LTS** 与 **npm 11**（项目通过 `engines` 与 `.nvmrc` 声明）。不再推荐使用 Node 18/20/22 作为新部署环境。
 
 ```bash
 npm install
@@ -23,10 +49,15 @@ npm start              # 默认监听 12121
 
 ```
 server.js            # 入口
-src/api/routes.js    # 路由
-src/core/            # 加密、数据库、企业微信 API、回调
-src/services/        # 业务编排
-public/              # 前端页面
+src/api/routes.js    # 路由（含页面会话守卫）
+src/core/            # 加密、数据库（含事务/级联删除）、企业微信 API、回调
+src/services/        # 业务编排（notifier：多应用生命周期/序列化/总开关）
+public/              # 前端页面（无构建步骤）
+  index.html/script.js     # 应用总览
+  wizard.html/wizard.js    # 新建向导
+  edit.html/edit.js        # 应用编辑
+  rules.html/rules.js      # 接收规则
+  styles.css, http.js, topnav.js, components/  # 公共组件
 ```
 
 ## 部署

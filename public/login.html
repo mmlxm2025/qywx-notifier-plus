@@ -1,140 +1,59 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="garden">
+<html lang="zh-CN" data-theme="qywx">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - 企业微信通知服务</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@3.5.0/dist/full.css" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        .glass-card {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(12px);
-            border-radius: 1rem;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.07);
-        }
-        body {
-            background: linear-gradient(135deg, #e0f2fe 0%, #bef264 100%);
-            min-height: 100vh;
-        }
-    </style>
+    <link rel="icon" href="/public/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/public/app.css">
+    <link rel="stylesheet" href="/public/styles.css">
+    <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
 <body class="flex flex-col items-center justify-center p-4">
     <div class="w-full max-w-md glass-card p-8">
         <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
-                <i data-lucide="lock" class="h-8 w-8 text-primary"></i>
+            <!-- 头部图标：加 ring 提升层次（§4 elevation-consistent）。 -->
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 ring-4 ring-primary/5 mb-4">
+                <i data-lucide="lock" class="icon-xl text-primary"></i>
             </div>
             <h1 class="text-2xl font-bold text-primary">管理登录</h1>
             <p class="text-base-content/60 mt-2">请输入管理员账号密码</p>
         </div>
 
         <div id="login-error" class="alert alert-error mb-4 hidden">
-            <i data-lucide="alert-circle" class="h-5 w-5"></i>
+            <i data-lucide="alert-circle" class="icon-md"></i>
             <span id="error-message"></span>
         </div>
 
         <form id="loginForm" class="space-y-4">
             <div class="form-control">
-                <label class="label">
+                <label class="label" for="login-username">
                     <span class="label-text font-medium">用户名</span>
                 </label>
-                <input type="text" name="username" class="input input-bordered w-full" required placeholder="请输入用户名">
+                <input id="login-username" type="text" name="username" class="input input-bordered w-full" required placeholder="请输入用户名" autocomplete="username">
             </div>
 
             <div class="form-control">
-                <label class="label">
+                <label class="label" for="login-password">
                     <span class="label-text font-medium">密码</span>
                 </label>
-                <input type="password" name="password" class="input input-bordered w-full" required placeholder="请输入密码">
+                <input id="login-password" type="password" name="password" class="input input-bordered w-full" required placeholder="请输入密码" autocomplete="current-password">
             </div>
 
             <button type="submit" class="btn btn-primary w-full gap-2">
-                <i data-lucide="log-in" class="w-5 h-5"></i>
+                <i data-lucide="log-in" class="icon-md"></i>
                 登录
             </button>
         </form>
 
         <div class="divider text-sm text-base-content/50">注意</div>
         <div class="alert alert-info text-sm">
-            <i data-lucide="info" class="h-4 w-4"></i>
+            <i data-lucide="info" class="icon-sm"></i>
             <span>如未设置管理员，请配置环境变量 ADMIN_USERNAME 和 ADMIN_PASSWORD</span>
         </div>
     </div>
 
-    <script>
-        lucide.createIcons();
-
-        const loginForm = document.getElementById('loginForm');
-        const loginError = document.getElementById('login-error');
-        const errorMessage = document.getElementById('error-message');
-
-        loginForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const username = loginForm.username.value.trim();
-            const password = loginForm.password.value;
-            
-            if (!username || !password) {
-                showError('请输入用户名和密码');
-                return;
-            }
-
-            const submitBtn = loginForm.querySelector('button[type=submit]');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="loading loading-spinner"></span> 登录中...';
-
-            try {
-                const res = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                
-                const data = await res.json();
-                
-                if (!res.ok) {
-                    throw new Error(data.error || '登录失败');
-                }
-                
-                localStorage.setItem('authToken', data.token);
-                window.location.href = '/?token=' + data.token;
-                
-            } catch (err) {
-                showError(err.message);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> 登录';
-                lucide.createIcons();
-            }
-        });
-
-        function showError(message) {
-            errorMessage.textContent = message;
-            loginError.classList.remove('hidden');
-        }
-
-        async function checkAuth() {
-            const token = localStorage.getItem('authToken');
-            if (!token) return;
-
-            try {
-                const res = await fetch('/api/auth-status', {
-                    headers: { 'Authorization': 'Bearer ' + token }
-                });
-                const data = await res.json();
-                
-                if (data.loggedIn) {
-                    window.location.href = '/?token=' + token;
-                }
-            } catch (err) {
-                console.error('检查登录状态失败:', err);
-            }
-        }
-
-        checkAuth();
-    </script>
+    <!-- SEC-011：内联脚本外置为独立文件，避免被 CSP script-src 拦截 -->
+    <script src="/public/login.js"></script>
 </body>
 </html>
