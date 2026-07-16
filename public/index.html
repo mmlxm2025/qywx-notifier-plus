@@ -3,22 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#e0f2fe">
     <title>应用总览 · 企业微信通知服务</title>
     <link rel="icon" href="/public/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/public/app.css">
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-3 sm:p-4 md:p-6">
-    <div class="app-page w-full max-w-5xl mx-auto my-2 sm:my-4">
+<body class="app-safe-pad">
+    <a href="#main-content" class="app-skip-link">跳到主内容</a>
+    <div class="app-page w-full max-w-5xl min-w-0 mx-auto my-2 sm:my-4">
         <!-- 顶部导航（公共组件渲染） -->
         <div id="app-topnav" data-active="overview" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card p-4 sm:p-6 min-w-0">
+        <main id="main-content" class="glass-card p-4 sm:p-6 min-w-0" tabindex="-1">
             <header class="flex items-center justify-between flex-wrap gap-3 mb-4 sm:mb-6">
                 <div class="min-w-0">
                     <h1 class="app-type-page text-primary flex items-center gap-2">
-                        <i data-lucide="layout-grid" class="icon-lg flex-shrink-0"></i>
+                        <i data-lucide="layout-grid" class="icon-lg flex-shrink-0" aria-hidden="true"></i>
                         应用总览
                     </h1>
                     <p class="app-type-lead text-base-content/70 mt-1">
@@ -53,19 +55,19 @@
 
             <!-- 错误状态（§7.2 error） -->
             <div id="error-state" class="hidden alert alert-error">
-                <i data-lucide="alert-circle" class="h-5 w-5"></i>
+                <i data-lucide="alert-circle" class="icon-md" aria-hidden="true"></i>
                 <span id="error-message">加载应用列表失败</span>
                 <button type="button" id="retry-btn" class="btn btn-sm btn-ghost">重试</button>
             </div>
 
             <!-- 应用列表（按 corpid 分组） -->
             <div id="app-list" class="space-y-6"></div>
-        </div>
+        </main>
 
         <footer class="text-center text-sm text-base-content/60 mt-4 mb-2">
             <p class="flex items-center justify-center gap-1">
-                <i data-lucide="external-link" class="h-4 w-4"></i>
-                <a href="https://www.wangwangit.com/" target="_blank" rel="noopener" class="hover:text-primary transition-colors">一只会飞的旺旺</a>
+                <i data-lucide="external-link" class="icon-sm" aria-hidden="true"></i>
+                <a href="https://www.wangwangit.com/" target="_blank" rel="noopener noreferrer" class="hover:text-primary transition-colors">一只会飞的旺旺</a>
             </p>
         </footer>
     </div>

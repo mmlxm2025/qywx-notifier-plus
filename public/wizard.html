@@ -3,19 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#e0f2fe">
     <title>新建应用 · 企业微信通知服务</title>
     <link rel="icon" href="/public/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/public/app.css">
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-3 sm:p-4 md:p-6">
-    <div class="app-page w-full max-w-2xl mx-auto my-2 sm:my-4">
+<body class="app-safe-pad">
+    <a href="#main-content" class="app-skip-link">跳到主内容</a>
+    <div class="app-page w-full max-w-2xl min-w-0 mx-auto my-2 sm:my-4">
         <div id="app-topnav" data-active="overview" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card p-4 sm:p-6 min-w-0">
+        <main id="main-content" class="glass-card p-4 sm:p-6 min-w-0" tabindex="-1">
             <h1 class="app-type-page text-primary flex items-center gap-2 mb-2">
-                <i data-lucide="plus-circle" class="icon-lg flex-shrink-0"></i>
+                <i data-lucide="plus-circle" class="icon-lg flex-shrink-0" aria-hidden="true"></i>
                 新建应用
             </h1>
             <p class="app-type-lead text-base-content/70 mb-4">
@@ -39,15 +41,15 @@
                 <form id="callbackForm" class="space-y-4">
                     <div class="form-control">
                         <label for="cb-corpid" class="label font-medium">CorpID（企业 ID）</label>
-                        <input id="cb-corpid" type="text" name="corpid" class="input input-bordered w-full" required placeholder="请输入企业微信 CorpID" autocomplete="off">
+                        <input id="cb-corpid" type="text" name="corpid" class="input input-bordered w-full" required placeholder="请输入企业微信 CorpID…" autocomplete="off" spellcheck="false">
                     </div>
                     <div class="form-control">
                         <label for="cb-token" class="label font-medium">回调 Token</label>
-                        <input id="cb-token" type="text" name="callback_token" class="input input-bordered w-full" placeholder="企业微信后台随机生成" required autocomplete="off">
+                        <input id="cb-token" type="text" name="callback_token" class="input input-bordered w-full" placeholder="企业微信后台随机生成…" required autocomplete="off" spellcheck="false">
                     </div>
                     <div class="form-control">
                         <label for="cb-aeskey" class="label font-medium">EncodingAESKey</label>
-                        <input id="cb-aeskey" type="text" name="encoding_aes_key" class="input input-bordered w-full" placeholder="43 位字母数字字符" required autocomplete="off">
+                        <input id="cb-aeskey" type="text" name="encoding_aes_key" class="input input-bordered w-full" placeholder="43 位字母数字字符…" required autocomplete="off" spellcheck="false">
                     </div>
                     <button type="submit" class="btn btn-primary w-full gap-1">
                         <i data-lucide="link" class="icon-md"></i> 生成回调 URL 并继续
@@ -65,15 +67,15 @@
                 <form id="configForm" class="space-y-4">
                     <div class="form-control">
                         <label for="cf-desc" class="label font-medium">应用名称/备注（可选）</label>
-                        <input id="cf-desc" type="text" name="description" class="input input-bordered w-full" placeholder="如：服务器告警推送" autocomplete="off">
+                        <input id="cf-desc" type="text" name="description" class="input input-bordered w-full" placeholder="例如：服务器告警推送…" autocomplete="off">
                     </div>
                     <div class="form-control">
                         <label for="cf-corpsecret" class="label font-medium">CorpSecret</label>
-                        <input id="cf-corpsecret" type="password" name="corpsecret" class="input input-bordered w-full" required placeholder="请输入 CorpSecret" autocomplete="new-password">
+                        <input id="cf-corpsecret" type="password" name="corpsecret" class="input input-bordered w-full" required placeholder="请输入 CorpSecret…" autocomplete="new-password" spellcheck="false">
                     </div>
                     <div class="form-control">
                         <label for="cf-agentid" class="label font-medium">AgentID</label>
-                        <input id="cf-agentid" type="number" name="agentid" class="input input-bordered w-full" required placeholder="请输入 AgentID" autocomplete="off">
+                        <input id="cf-agentid" type="number" name="agentid" inputmode="numeric" class="input input-bordered w-full" required placeholder="例如 1000002…" autocomplete="off">
                     </div>
                     <button type="button" id="validateBtn" class="btn btn-outline w-full gap-1">
                         <i data-lucide="shield-check" class="icon-md"></i> 验证凭证
@@ -121,7 +123,7 @@
             </div>
 
             <div id="result" class="mt-6"></div>
-        </div>
+        </main>
     </div>
 
     <script src="/public/components/toast.js"></script>

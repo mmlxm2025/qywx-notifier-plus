@@ -3,20 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#e0f2fe">
     <title>接收规则 · 企业微信通知服务</title>
     <link rel="icon" href="/public/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/public/app.css">
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-3 sm:p-4 md:p-6">
+<body class="app-safe-pad">
+    <a href="#main-content" class="app-skip-link">跳到主内容</a>
     <div class="app-page w-full max-w-5xl min-w-0 mx-auto my-2 sm:my-4">
         <div id="app-topnav" data-active="rules" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card min-w-0 p-4 sm:p-6">
+        <main id="main-content" class="glass-card min-w-0 p-4 sm:p-6" tabindex="-1">
             <header class="flex items-center justify-between flex-wrap gap-3 mb-4">
                 <h1 class="app-type-page flex items-center gap-2">
-                    <i data-lucide="route" class="icon-lg text-primary flex-shrink-0"></i>
+                    <i data-lucide="route" class="icon-lg text-primary flex-shrink-0" aria-hidden="true"></i>
                     接收规则
                 </h1>
             </header>
@@ -38,7 +40,7 @@
                  配置级安全设置（Code 发送开关 / 通知密钥）唯一在编辑页管理，规则页不再重复。 -->
             <section id="app-context" class="hidden mb-4 alert alert-info text-sm flex flex-col gap-1">
                 <div class="flex items-center gap-2 flex-wrap">
-                    <i data-lucide="building-2" class="h-5 w-5"></i>
+                    <i data-lucide="building-2" class="icon-md" aria-hidden="true"></i>
                     <span id="app-context-name" class="font-medium">—</span>
                     <span class="text-base-content/60">·</span>
                     <span id="app-context-agentid" class="text-base-content/70">AgentID —</span>
@@ -51,7 +53,7 @@
             </section>
 
             <section id="workspace" class="hidden min-w-0 grid gap-4">
-                <div class="min-w-0 grid gap-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+                <div class="min-w-0 grid gap-4 lg:grid-cols-[minmax(0,22.5rem)_minmax(0,1fr)]">
                     <form id="rule-form" class="min-w-0 bg-base-100/70 rounded-xl p-4 border border-base-200">
                         <div class="flex items-center justify-between gap-3">
                             <h2 id="form-title" class="app-type-section">新建规则</h2>
@@ -74,7 +76,7 @@
                                 <span class="join-item bg-base-200 border border-base-300 flex items-center px-3 h-9 text-xs text-base-content/60 select-none font-mono" aria-hidden="true">/api/notify/</span>
                                 <input id="rule-api-code" class="join-item input input-bordered input-sm min-w-0 w-0 flex-1 font-mono h-9"
                                     maxlength="64" autocomplete="off" spellcheck="false"
-                                    placeholder="留空将自动生成，或点击右侧随机"
+                                    placeholder="留空将自动生成，或点击右侧随机…"
                                     aria-describedby="rule-api-code-help rule-api-code-status">
                                 <button id="rule-api-code-random" type="button" class="join-item btn btn-sm btn-outline h-9 gap-1" title="随机生成编号" aria-label="随机生成编号">
                                     <i data-lucide="shuffle" class="icon-sm"></i>
@@ -98,9 +100,9 @@
 
                         <div id="custom-scope" class="space-y-3">
                             <div class="flex gap-2">
-                                <input id="member-filter" class="input input-bordered input-sm min-w-0 flex-1" placeholder="筛选成员" aria-label="筛选成员">
+                                <input id="member-filter" class="input input-bordered input-sm min-w-0 flex-1" placeholder="筛选成员…" aria-label="筛选成员" autocomplete="off">
                                 <button id="refresh-members-btn" type="button" class="btn btn-sm btn-outline" title="刷新成员" aria-label="刷新成员">
-                                    <i data-lucide="refresh-cw" class="icon-sm"></i>
+                                    <i data-lucide="refresh-cw" class="icon-sm" aria-hidden="true"></i>
                                 </button>
                             </div>
                             <div id="member-list" class="grid gap-2 max-h-52 overflow-y-auto rounded-md border border-base-200 p-2"></div>
@@ -147,7 +149,7 @@
                     </section>
                 </div>
             </section>
-        </div>
+        </main>
     </div>
 
     <!-- SEC-011：脚本外置。多应用（P1-02）：接入统一 styles/topnav/http/modal/toast，移除重复安全设置。 -->

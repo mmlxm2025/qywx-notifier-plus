@@ -70,6 +70,9 @@ html {
     font-size: 100%;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    color-scheme: light;
+    /* 避免移动端双击缩放延迟，保留捏合缩放（不设置 user-scalable=no）。 */
+    touch-action: manipulation;
 }
 
 body {
@@ -79,6 +82,57 @@ body {
     min-height: 100dvh;
     font-size: var(--text-base);
     line-height: var(--leading-body);
+    /* 防止宽表/代码把整页撑出横向滚动条；局部滚动容器自行 overflow-x-auto。 */
+    overflow-x: clip;
+    -webkit-tap-highlight-color: rgba(17, 24, 39, 0.08);
+}
+
+/* 页面边距：Tailwind p-* 与刘海安全区取 max，mobile-first 断点对齐 sm/md。 */
+.app-safe-pad {
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+}
+@media (min-width: 640px) {
+    .app-safe-pad {
+        padding-top: max(1rem, env(safe-area-inset-top, 0px));
+        padding-right: max(1rem, env(safe-area-inset-right, 0px));
+        padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+        padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    }
+}
+@media (min-width: 768px) {
+    .app-safe-pad {
+        padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
+        padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+        padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+        padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+    }
+}
+
+/* 跳到主内容：键盘用户可见，默认移出视口。 */
+.app-skip-link {
+    position: absolute;
+    left: max(0.75rem, env(safe-area-inset-left, 0px));
+    top: max(0.75rem, env(safe-area-inset-top, 0px));
+    z-index: 10050;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius-md);
+    background: #111827;
+    color: #fff;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+    text-decoration: none;
+    transform: translateY(-160%);
+    transition: transform var(--duration-fast) var(--ease-out);
+}
+.app-skip-link:focus,
+.app-skip-link:focus-visible {
+    transform: translateY(0);
+    outline: none;
+    box-shadow: var(--shadow-focus);
 }
 
 .glass-card {
@@ -98,16 +152,19 @@ body {
     font-size: var(--text-2xl);   /* 1.5rem · 24px */
     line-height: var(--leading-tight);
     font-weight: 700;
+    text-wrap: balance;
 }
 .app-type-page {
     font-size: var(--text-xl);    /* 1.25rem · 20px */
     line-height: var(--leading-tight);
     font-weight: 700;
+    text-wrap: balance;
 }
 .app-type-section {
     font-size: var(--text-base);  /* 1rem · 16px */
     line-height: var(--leading-tight);
     font-weight: 600;
+    text-wrap: pretty;
 }
 .app-type-lead {
     font-size: var(--text-sm);    /* 0.875rem · 14px */
@@ -319,16 +376,24 @@ body.app-modal-open { overflow: hidden; }
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 1rem;
+    padding: max(1rem, env(safe-area-inset-top, 0px))
+             max(1rem, env(safe-area-inset-right, 0px))
+             max(1rem, env(safe-area-inset-bottom, 0px))
+             max(1rem, env(safe-area-inset-left, 0px));
     background: rgba(0, 0, 0, 0.55);
+    overscroll-behavior: contain;
+    touch-action: manipulation;
 }
 .app-modal-dialog {
     width: 100%;
     max-width: 32rem;
+    max-height: min(90dvh, 40rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 1.5rem;
     border-radius: var(--radius-lg);
     background: #fff;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.22);
 }
 .app-modal-title {
     margin-bottom: 0.75rem;
@@ -357,12 +422,14 @@ body.app-modal-open { overflow: hidden; }
 /* CSP 收紧后的 Toast。 */
 .app-toast-container {
     position: fixed;
-    top: 1rem;
+    top: max(1rem, env(safe-area-inset-top, 0px));
     left: 50%;
     z-index: 9999;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    width: min(90vw, 28rem);
+    max-width: calc(100vw - 2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
     pointer-events: none;
     transform: translateX(-50%);
 }

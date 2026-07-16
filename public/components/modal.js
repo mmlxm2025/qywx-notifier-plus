@@ -107,7 +107,7 @@
             modalState.busy = true;
             cancelBtn.disabled = true;
             const original = confirmBtn.textContent;
-            confirmBtn.textContent = '处理中...';
+            confirmBtn.textContent = '处理中…';
             let shouldClose = true;
             try {
                 if (typeof opts.onConfirm === 'function') {

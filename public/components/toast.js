@@ -41,6 +41,7 @@
             const icon = document.createElement('i');
             icon.setAttribute('data-lucide', TYPE_ICONS[type]);
             icon.className = 'icon-sm flex-shrink-0';
+            icon.setAttribute('aria-hidden', 'true');
             toast.appendChild(icon);
         }
 

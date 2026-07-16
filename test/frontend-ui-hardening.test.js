@@ -110,6 +110,12 @@ test('responsive type scale uses rem with 16px PC base', () => {
     assert.match(styles, /--text-base:\s*1rem/);
     assert.match(styles, /\.app-type-page\s*\{[\s\S]*?font-size:\s*var\(--text-xl\)/);
     assert.match(styles, /@media\s*\(min-width:\s*640px\)[\s\S]*?\.app-type-page[\s\S]*?--text-2xl/);
+    // 触控 / 安全区 / 模态 overscroll（Web Interface Guidelines）。
+    assert.match(styles, /touch-action:\s*manipulation/);
+    assert.match(styles, /safe-area-inset-/);
+    assert.match(styles, /\.app-modal-overlay[\s\S]*?overscroll-behavior:\s*contain/);
+    assert.match(styles, /\.app-skip-link/);
+    assert.match(styles, /\.app-safe-pad/);
 
     const tailwind = read('tailwind.config.js');
     assert.match(tailwind, /base:\s*\[\s*'1rem'/);
@@ -117,6 +123,17 @@ test('responsive type scale uses rem with 16px PC base', () => {
     for (const page of pages) {
         const html = read(`public/${page}`);
         assert.match(html, /viewport/, `${page} needs viewport meta`);
+        assert.match(html, /name="theme-color"/, `${page} needs theme-color`);
+        assert.match(html, /app-skip-link/, `${page} needs skip link`);
+        assert.match(html, /id="main-content"/, `${page} needs main landmark`);
+        assert.match(html, /app-safe-pad/, `${page} needs safe-area padding`);
         assert.doesNotMatch(html, /font-size:\s*\d+px/, `${page} must not hardcode px font-size`);
+        assert.doesNotMatch(html, /user-scalable\s*=\s*no|maximum-scale\s*=\s*1/i,
+            `${page} must not disable zoom`);
     }
+
+    // 规则页双栏布局用 rem，避免固定 360px。
+    const rules = read('public/rules.html');
+    assert.match(rules, /lg:grid-cols-\[minmax\(0,22\.5rem\)/);
+    assert.doesNotMatch(rules, /360px/);
 });

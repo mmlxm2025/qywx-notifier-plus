@@ -31,6 +31,7 @@
         const brandIcon = document.createElement('i');
         brandIcon.setAttribute('data-lucide', 'bell-ring');
         brandIcon.className = 'icon-lg flex-shrink-0';
+        brandIcon.setAttribute('aria-hidden', 'true');
         brand.appendChild(brandIcon);
         const brandText = document.createElement('span');
         brandText.className = 'app-topnav-brand-text';
@@ -53,6 +54,7 @@
             const icon = document.createElement('i');
             icon.setAttribute('data-lucide', link.icon);
             icon.className = 'icon-sm';
+            icon.setAttribute('aria-hidden', 'true');
             a.appendChild(icon);
             const label = document.createElement('span');
             // 窄屏仅图标 + aria-label；sm 及以上显示文案，减少导航换行。
@@ -78,6 +80,7 @@
         const logoutIcon = document.createElement('i');
         logoutIcon.setAttribute('data-lucide', 'log-out');
         logoutIcon.className = 'icon-sm';
+        logoutIcon.setAttribute('aria-hidden', 'true');
         logoutBtn.appendChild(logoutIcon);
         const logoutLabel = document.createElement('span');
         logoutLabel.className = 'hidden sm:inline';

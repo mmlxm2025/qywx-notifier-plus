@@ -3,24 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#e0f2fe">
     <title>编辑应用 · 企业微信通知服务</title>
     <link rel="icon" href="/public/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/public/app.css">
     <link rel="stylesheet" href="/public/styles.css">
     <script defer src="/public/vendor/lucide.min.js"></script>
 </head>
-<body class="p-3 sm:p-4 md:p-6">
-    <div class="app-page w-full max-w-3xl mx-auto my-2 sm:my-4">
+<body class="app-safe-pad">
+    <a href="#main-content" class="app-skip-link">跳到主内容</a>
+    <div class="app-page w-full max-w-3xl min-w-0 mx-auto my-2 sm:my-4">
         <div id="app-topnav" data-active="overview" class="glass-card p-3 sm:p-4 mb-3 sm:mb-4"></div>
 
-        <div class="glass-card p-4 sm:p-6 min-w-0">
+        <main id="main-content" class="glass-card p-4 sm:p-6 min-w-0" tabindex="-1">
             <header class="flex items-center justify-between flex-wrap gap-3 mb-4">
                 <h1 class="app-type-page flex items-center gap-2 min-w-0">
-                    <i data-lucide="pencil" class="icon-lg text-primary flex-shrink-0"></i>
+                    <i data-lucide="pencil" class="icon-lg text-primary flex-shrink-0" aria-hidden="true"></i>
                     编辑应用
                 </h1>
                 <a href="/" class="btn btn-sm btn-ghost gap-1.5">
-                    <i data-lucide="arrow-left" class="icon-sm"></i> 返回总览
+                    <i data-lucide="arrow-left" class="icon-sm" aria-hidden="true"></i> 返回总览
                 </a>
             </header>
 
@@ -57,11 +59,11 @@
                     <h2 class="app-type-section mb-3 flex items-center gap-2"><i data-lucide="info" class="icon-md text-primary"></i> 基本信息</h2>
                     <div class="form-control mb-3">
                         <label for="f-description" class="label font-medium">应用名称/备注</label>
-                        <input id="f-description" type="text" class="input input-bordered w-full" placeholder="如：服务器告警推送" autocomplete="off">
+                        <input id="f-description" type="text" class="input input-bordered w-full" placeholder="例如：服务器告警推送…" autocomplete="off">
                     </div>
                     <div class="form-control">
                         <label for="f-agentid" class="label font-medium">AgentID（变更会重新验证凭证）</label>
-                        <input id="f-agentid" type="number" class="input input-bordered w-full" placeholder="正整数" autocomplete="off">
+                        <input id="f-agentid" type="number" inputmode="numeric" class="input input-bordered w-full" placeholder="例如 1000002…" autocomplete="off">
                     </div>
                 </section>
 
@@ -74,7 +76,7 @@
                     </div>
                     <div class="form-control">
                         <label for="f-corpsecret" class="label font-medium">CorpSecret（留空表示不修改）</label>
-                        <input id="f-corpsecret" type="password" class="input input-bordered w-full" placeholder="留空保持不变" autocomplete="new-password">
+                        <input id="f-corpsecret" type="password" class="input input-bordered w-full" placeholder="留空保持不变…" autocomplete="new-password" spellcheck="false">
                         <div class="label">
                             <span class="label-text-alt text-base-content/60">修改 CorpSecret 或 AgentID 会在保存时重新验证企业微信凭证。</span>
                         </div>
@@ -90,11 +92,11 @@
                     </label>
                     <div class="form-control mb-3">
                         <label for="f-callback-token" class="label font-medium">回调 Token（留空不变）</label>
-                        <input id="f-callback-token" type="password" class="input input-bordered w-full" placeholder="留空保持不变" autocomplete="new-password">
+                        <input id="f-callback-token" type="password" class="input input-bordered w-full" placeholder="留空保持不变…" autocomplete="new-password" spellcheck="false">
                     </div>
                     <div class="form-control">
                         <label for="f-aeskey" class="label font-medium">EncodingAESKey（留空不变）</label>
-                        <input id="f-aeskey" type="password" class="input input-bordered w-full" placeholder="43 位字母数字字符；留空不变" autocomplete="new-password">
+                        <input id="f-aeskey" type="password" class="input input-bordered w-full" placeholder="43 位字母数字；留空不变…" autocomplete="new-password" spellcheck="false">
                     </div>
                     <div id="callback-url-display" class="text-xs text-base-content/60 mt-2 break-all"></div>
                 </section>
@@ -147,7 +149,7 @@
                     </button>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
 
     <script src="/public/components/toast.js"></script>
