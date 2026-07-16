@@ -410,11 +410,29 @@ function assertSendAllowed(config, rule) {
     if (isDraftConfig(config)) {
         throw createError('应用尚未完成配置', 409, 'APP_NOT_COMPLETED');
     }
+    // 多应用（§4.4 三层发送开关）：与 HTTP resolveNotifyAuth 对齐，防止直接调用
+    // sendNotification 绕过路由层子开关。
     const appEnabled = config.app_enabled === undefined
         ? true
         : (config.app_enabled === 1 || config.app_enabled === true);
     if (!appEnabled) {
         throw createError('该应用已暂停发送', 403, 'APP_DISABLED');
+    }
+    if (rule) {
+        // null/undefined 视为开启（与序列化/历史默认一致）；仅显式关闭拒绝。
+        const ruleEnabled = rule.enabled === null || rule.enabled === undefined
+            ? true
+            : (rule.enabled === 1 || rule.enabled === true);
+        if (!ruleEnabled) {
+            throw createError('该规则已被禁用', 403, 'RULE_DISABLED');
+        }
+    } else {
+        const codeSendEnabled = config.code_send_enabled === undefined || config.code_send_enabled === null
+            ? true
+            : (config.code_send_enabled === 1 || config.code_send_enabled === true);
+        if (!codeSendEnabled) {
+            throw createError('该应用已关闭 Code 直接发送，请使用规则 API', 403, 'DIRECT_SEND_DISABLED');
+        }
     }
 }
 
@@ -1564,8 +1582,11 @@ async function resolveNotificationTarget(code) {
             throw createError('规则关联的配置不存在', 404);
         }
         // 同时命中配置 Code：命名空间损坏，拒绝发送。
+        // 编号比较 ASCII 大小写不敏感（与 ux_*_nocase / getConfigurationByCode 一致），
+        // 不能用 directConfig.code === code 精确相等，否则 OPS-ALERT vs ops-alert 会漏检。
         const directConfig = await db.getConfigurationByCode(code).catch(() => null);
-        if (directConfig && directConfig.code === code) {
+        if (directConfig
+            && String(directConfig.code).toLowerCase() === String(code).toLowerCase()) {
             throw createError(
                 '通知编号命名空间损坏：同一编号同时被规则与配置占用',
                 500,

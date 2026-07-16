@@ -4,7 +4,8 @@
 //   - 级联删除：配置 + N 条规则一起删除，返回计数准确。
 //   - 事务回滚：规则删除成功但配置删除失败时配置与规则都保留。
 //   - 版本校验：删除携带 If-Match，冲突返回 APP_VERSION_CONFLICT。
-//   - 防绕过：notifier 内部发送入口也受 app_enabled / 草稿状态限制。
+//   - 防绕过：notifier 内部发送入口也受 app_enabled / 草稿 / code_send / rule.enabled 限制。
+//   - 命名空间损坏：规则与配置 Code 大小写冲突时拒绝发送。
 //   - 缓存失效：删除成功后清理 token 缓存（尽力）。
 
 const assert = require('assert/strict');
@@ -103,16 +104,20 @@ function setupNotifier(t, { store = {}, failStep = null, invalidateTokenCalls = 
     };
 
     replaceForTest(t, Database.prototype, 'init', async function init() {});
+    // 与生产 DAO 一致：编号查询大小写不敏感，返回库内权威大小写行。
     replaceForTest(t, Database.prototype, 'getConfigurationByCode', async function getConfigurationByCode(code) {
-        const row = cfgByCode[code];
-        return row ? { ...row } : null;
+        if (code === undefined || code === null || String(code).trim() === '') return null;
+        const key = Object.keys(cfgByCode).find(k => String(k).toLowerCase() === String(code).toLowerCase());
+        return key ? { ...cfgByCode[key] } : null;
     });
     replaceForTest(t, Database.prototype, 'listNotificationRules', async function listNotificationRules(configCode) {
         return (rulesByConfigCode[configCode] || []).map(r => ({ ...r }));
     });
     replaceForTest(t, Database.prototype, 'getNotificationRuleByApiCode', async function getNotificationRuleByApiCode(apiCode) {
+        if (apiCode === undefined || apiCode === null || String(apiCode).trim() === '') return null;
+        const needle = String(apiCode).toLowerCase();
         for (const list of Object.values(rulesByConfigCode)) {
-            const hit = list.find(r => r.api_code === apiCode);
+            const hit = list.find(r => String(r.api_code).toLowerCase() === needle);
             if (hit) return { ...hit };
         }
         return null;
@@ -359,5 +364,102 @@ test('规则 API 在应用暂停时同样 APP_DISABLED', async t => {
     assert.ok(caught);
     assert.equal(caught.statusCode, 403);
     assert.equal(caught.businessCode, 'APP_DISABLED');
+    assert.equal(calls.sent.length, 0);
+});
+
+// ─── P2-A：service 层子开关防绕过（assertSendAllowed）────────────────
+
+test('P2-A: code_send_enabled=0 时直接 sendNotification 返回 DIRECT_SEND_DISABLED', async t => {
+    const { notifier, calls } = setupNotifier(t, {
+        store: {
+            configs: { 'app-a': completedConfig({ code_send_enabled: 0, app_enabled: 1, version: 2 }) }
+        }
+    });
+
+    let caught = null;
+    try {
+        await notifier.sendNotification('app-a', 'hi', 'hello', { msgType: 'text' });
+    } catch (err) {
+        caught = err;
+    }
+
+    assert.ok(caught, '关闭 Code 直发后 service 层不得放行');
+    assert.equal(caught.statusCode, 403);
+    assert.equal(caught.businessCode, 'DIRECT_SEND_DISABLED');
+    assert.equal(calls.sent.length, 0);
+});
+
+test('P2-A: rule.enabled=0 时直接 sendNotification 返回 RULE_DISABLED', async t => {
+    const { notifier, calls } = setupNotifier(t, {
+        store: {
+            configs: { 'app-a': completedConfig({ app_enabled: 1, code_send_enabled: 1, version: 2 }) },
+            rulesByConfigCode: { 'app-a': [ruleRow({ api_code: 'rule-api', enabled: 0 })] }
+        }
+    });
+
+    let caught = null;
+    try {
+        await notifier.sendNotification('rule-api', 'hi', 'hello', { msgType: 'text' });
+    } catch (err) {
+        caught = err;
+    }
+
+    assert.ok(caught, '禁用规则后 service 层不得放行');
+    assert.equal(caught.statusCode, 403);
+    assert.equal(caught.businessCode, 'RULE_DISABLED');
+    assert.equal(calls.sent.length, 0);
+});
+
+// ─── P2-B：命名空间损坏检测大小写不敏感 ──────────────────────────────
+
+test('P2-B: 规则与配置 Code 仅大小写不同时返回 NOTIFY_CODE_NAMESPACE_CORRUPTED', async t => {
+    const { notifier, calls } = setupNotifier(t, {
+        store: {
+            configs: {
+                'app-a': completedConfig({ code: 'app-a', agentid: 100001, version: 2 }),
+                // 与规则 api_code「ops-alert」仅大小写不同 → 命名空间损坏
+                'OPS-ALERT': completedConfig({ code: 'OPS-ALERT', agentid: 100002, version: 1 })
+            },
+            rulesByConfigCode: {
+                'app-a': [ruleRow({ api_code: 'ops-alert', enabled: 1 })]
+            }
+        }
+    });
+
+    let caught = null;
+    try {
+        await notifier.sendNotification('ops-alert', 'hi', 'hello', { msgType: 'text' });
+    } catch (err) {
+        caught = err;
+    }
+
+    assert.ok(caught, '大小写冲突必须拒绝发送');
+    assert.equal(caught.statusCode, 500);
+    assert.equal(caught.businessCode, 'NOTIFY_CODE_NAMESPACE_CORRUPTED');
+    assert.equal(calls.sent.length, 0);
+});
+
+test('P2-B: 规则与配置 Code 完全相同时仍返回 NOTIFY_CODE_NAMESPACE_CORRUPTED', async t => {
+    const { notifier, calls } = setupNotifier(t, {
+        store: {
+            configs: {
+                'app-a': completedConfig({ code: 'app-a', agentid: 100001, version: 2 }),
+                'same-code': completedConfig({ code: 'same-code', agentid: 100002, version: 1 })
+            },
+            rulesByConfigCode: {
+                'app-a': [ruleRow({ api_code: 'same-code', enabled: 1 })]
+            }
+        }
+    });
+
+    let caught = null;
+    try {
+        await notifier.sendNotification('same-code', 't', 'c', { msgType: 'text' });
+    } catch (err) {
+        caught = err;
+    }
+
+    assert.ok(caught);
+    assert.equal(caught.businessCode, 'NOTIFY_CODE_NAMESPACE_CORRUPTED');
     assert.equal(calls.sent.length, 0);
 });

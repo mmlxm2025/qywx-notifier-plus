@@ -146,22 +146,29 @@ app.post('/api/logout', (req, res) => {
 });
 
 // 会话管理（SEC-006）：列出 / 吊销会话
+// 401 统一 AUTH_REQUIRED，与 requireAuth / 前端 AppHttp 契约一致。
 app.get('/api/sessions', (req, res) => {
     const sessionId = auth.parseSessionFromCookie(req.headers.cookie);
-    if (!auth.verifySession(sessionId)) return res.status(401).json({ error: '未登录或登录已过期' });
+    if (!auth.verifySession(sessionId)) {
+        return res.status(401).json({ error: '未登录或登录已过期', code: 'AUTH_REQUIRED' });
+    }
     res.json({ sessions: auth.listSessions() });
 });
 
 app.delete('/api/sessions/:id', (req, res) => {
     const sessionId = auth.parseSessionFromCookie(req.headers.cookie);
-    if (!auth.verifySession(sessionId)) return res.status(401).json({ error: '未登录或登录已过期' });
+    if (!auth.verifySession(sessionId)) {
+        return res.status(401).json({ error: '未登录或登录已过期', code: 'AUTH_REQUIRED' });
+    }
     auth.revokeSession(req.params.id);
     res.json({ success: true });
 });
 
 app.delete('/api/sessions', (req, res) => {
     const sessionId = auth.parseSessionFromCookie(req.headers.cookie);
-    if (!auth.verifySession(sessionId)) return res.status(401).json({ error: '未登录或登录已过期' });
+    if (!auth.verifySession(sessionId)) {
+        return res.status(401).json({ error: '未登录或登录已过期', code: 'AUTH_REQUIRED' });
+    }
     auth.revokeAllSessions();
     res.json({ success: true });
 });
@@ -226,9 +233,9 @@ app.use((err, req, res, next) => {
     return res.status(500).json({ error: '服务器内部错误', code: 'INTERNAL_ERROR' });
 });
 
-// 404处理
+// 404 处理：稳定 code，前端禁止匹配中文文案。
 app.use((req, res) => {
-    res.status(404).json({ error: '未找到资源' });
+    res.status(404).json({ error: '未找到资源', code: 'NOT_FOUND' });
 });
 
 // 周期清理限流器内存
