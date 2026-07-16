@@ -210,7 +210,7 @@ router.post('/api/notify/:code', async (req, res) => {
         notifyLimiter.check(`notify:${clientIp(req)}`);
     } catch (limitErr) {
         res.setHeader('Retry-After', String(limitErr.retryAfter || 1));
-        return res.status(429).json({ error: limitErr.message });
+        return res.status(429).json({ error: limitErr.message, code: 'RATE_LIMITED' });
     }
 
     const { code } = req.params;
@@ -289,8 +289,9 @@ async function resolveNotifyAuth(req, requestedCode) {
         return { ok: false, statusCode: 404, code: 'APP_NOT_FOUND', error: '无效的code，未找到配置' };
     }
 
-    // 草稿状态：草稿不能发送，但仍允许回调验证（回调验证不走本函数）。
-    if (notifier.isDraftConfig(config)) {
+    // 未完成态不能发送（含纯草稿与半完成配置），但仍允许回调验证（回调验证不走本函数）。
+    // 必须用 isCompletedConfig：isDraftConfig 只匹配三项全缺，半完成配置会漏拦。
+    if (!notifier.isCompletedConfig(config)) {
         return { ok: false, statusCode: 409, code: 'APP_NOT_COMPLETED', error: '应用尚未完成配置' };
     }
 

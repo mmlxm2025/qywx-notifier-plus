@@ -425,8 +425,12 @@ test('REV-006 发送失败后成员频率额度正确回滚，下次请求不被
         return { errcode: 0 };
     });
 
-    // 第一次失败
-    await assert.rejects(() => notifier.sendNotification('cfg-1', 'T', 'body-1'), /network failure/);
+    // 第一次失败：发送路径将上游错误归一化为 WECHAT_UNAVAILABLE（稳定业务码）。
+    // 本用例关注额度回滚，不校验原始英文 network failure 文案。
+    await assert.rejects(
+        () => notifier.sendNotification('cfg-1', 'T', 'body-1'),
+        (err) => err.statusCode === 502 || /暂时不可用|network failure/.test(err.message || '')
+    );
     // 第二次不同内容应能成功（额度已回滚）
     const result = await notifier.sendNotification('cfg-1', 'T', 'body-2');
     assert.equal(result.errcode, 0, '失败后额度应已回滚，第二次应成功');

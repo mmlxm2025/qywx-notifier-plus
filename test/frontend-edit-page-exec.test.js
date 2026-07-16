@@ -119,9 +119,24 @@ function buildDomSandbox() {
                 computeEditRefreshPlan: (opts) => ({
                     pickerCurrent: opts.snapshotTouser || opts.serverTouser || [],
                     pickerOrphan: []
-                })
+                }),
+                // 成员列表代次守卫：与生产 frontend-helpers 同语义。
+                createRequestGuard: () => {
+                    let current = 0;
+                    return {
+                        next() { current += 1; return current; },
+                        current() { return current; },
+                        isCurrent(generation) { return generation === current; }
+                    };
+                }
             },
-            location: { origin: 'https://test.example', search: '?code=app-exec', pathname: '/edit', href: '' }
+            location: {
+                origin: 'https://test.example',
+                search: '?code=app-exec',
+                pathname: '/edit',
+                hash: '',
+                href: ''
+            }
         },
         document: {
             getElementById: (id) => elements[id] || makeEl(id),

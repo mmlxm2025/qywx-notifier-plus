@@ -346,6 +346,103 @@ test('草稿应用发送返回 APP_NOT_COMPLETED', async t => {
     assert.equal(caught.businessCode, 'APP_NOT_COMPLETED');
 });
 
+// 业务逻辑漏洞：isDraftConfig 只匹配「纯草稿」(无 secret AND 无 agent AND 无 touser)。
+// 半完成配置（仅有 secret、或 secret+agent 但无 touser）不是 isDraft，也不是 isCompleted。
+// 发送闸门必须用 !isCompletedConfig，否则会错误放行并调用企业微信（空接收人/非法 agentid）。
+test('半完成配置(仅有 secret)发送必须 APP_NOT_COMPLETED 且不调用企业微信', async t => {
+    const { notifier, calls } = setupNotifier(t, {
+        store: {
+            configs: {
+                'partial-secret': completedConfig({
+                    code: 'partial-secret',
+                    encrypted_corpsecret: 'enc-secret',
+                    agentid: 0,
+                    touser: '',
+                    app_enabled: 1
+                })
+            }
+        }
+    });
+
+    assert.equal(notifier.isDraftConfig(completedConfig({
+        encrypted_corpsecret: 'enc-secret', agentid: 0, touser: ''
+    })), false, '半完成配置不得被 isDraftConfig 判为草稿');
+    assert.equal(notifier.isCompletedConfig(completedConfig({
+        encrypted_corpsecret: 'enc-secret', agentid: 0, touser: ''
+    })), false);
+
+    let caught = null;
+    try {
+        await notifier.sendNotification('partial-secret', 'hi', 'hello', { msgType: 'text' });
+    } catch (err) {
+        caught = err;
+    }
+
+    assert.ok(caught, '半完成配置不得发送');
+    assert.equal(caught.statusCode, 409);
+    assert.equal(caught.businessCode, 'APP_NOT_COMPLETED');
+    assert.equal(calls.sent.length, 0);
+});
+
+test('半完成配置(有 secret+agent 无 touser)发送必须 APP_NOT_COMPLETED', async t => {
+    const { notifier, calls } = setupNotifier(t, {
+        store: {
+            configs: {
+                'partial-agent': completedConfig({
+                    code: 'partial-agent',
+                    encrypted_corpsecret: 'enc-secret',
+                    agentid: 100001,
+                    touser: '',
+                    app_enabled: 1
+                })
+            }
+        }
+    });
+
+    let caught = null;
+    try {
+        await notifier.sendNotification('partial-agent', 'hi', 'hello', { msgType: 'text' });
+    } catch (err) {
+        caught = err;
+    }
+
+    assert.ok(caught);
+    assert.equal(caught.statusCode, 409);
+    assert.equal(caught.businessCode, 'APP_NOT_COMPLETED');
+    assert.equal(calls.sent.length, 0);
+});
+
+test('规则 API 在所属应用半完成时同样 APP_NOT_COMPLETED', async t => {
+    const { notifier, calls } = setupNotifier(t, {
+        store: {
+            configs: {
+                'app-a': completedConfig({
+                    code: 'app-a',
+                    encrypted_corpsecret: 'enc-secret',
+                    agentid: 100001,
+                    touser: '',
+                    app_enabled: 1
+                })
+            },
+            rulesByConfigCode: {
+                'app-a': [ruleRow({ api_code: 'rule-on-partial', enabled: 1 })]
+            }
+        }
+    });
+
+    let caught = null;
+    try {
+        await notifier.sendNotification('rule-on-partial', 'hi', 'hello', { msgType: 'text' });
+    } catch (err) {
+        caught = err;
+    }
+
+    assert.ok(caught);
+    assert.equal(caught.statusCode, 409);
+    assert.equal(caught.businessCode, 'APP_NOT_COMPLETED');
+    assert.equal(calls.sent.length, 0);
+});
+
 test('规则 API 在应用暂停时同样 APP_DISABLED', async t => {
     const { notifier, calls } = setupNotifier(t, {
         store: {

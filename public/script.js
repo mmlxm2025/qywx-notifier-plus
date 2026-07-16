@@ -35,14 +35,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
     checkAuth().then(isAuth => { if (isAuth) bootstrap(); });
 
+    function redirectToLogin() {
+        try {
+            const here = window.location.pathname + window.location.search + window.location.hash;
+            window.location.href = '/login?next=' + encodeURIComponent(here);
+        } catch (_e) {
+            window.location.href = '/login';
+        }
+    }
+
     async function checkAuth() {
         try {
             const res = await fetch('/api/auth-status', { credentials: 'same-origin' });
             const data = await res.json();
-            if (!data.loggedIn) { window.location.href = '/login'; return false; }
+            if (!data.loggedIn) { redirectToLogin(); return false; }
             return true;
         } catch (_e) {
-            window.location.href = '/login';
+            redirectToLogin();
             return false;
         }
     }
@@ -368,7 +377,12 @@ document.addEventListener('DOMContentLoaded', function () {
         // 取关联规则用于影响预览（删除前看清规则和失效地址）。
         const rulesRes = await http.get('/api/configuration/' + encodeURIComponent(app.code) + '/rules');
         btn.disabled = false;
-        const rules = (rulesRes.ok && rulesRes.data && rulesRes.data.rules) || [];
+        // 预览失败不得当成「0 条规则」继续删：会误导确认文案却仍级联删除全部规则。
+        if (!rulesRes.ok) {
+            toast.show(rulesRes.error || '无法加载规则列表，删除已取消', { type: 'error' });
+            return;
+        }
+        const rules = (rulesRes.data && rulesRes.data.rules) || [];
 
         const body = document.createElement('div');
         body.className = 'space-y-2 text-sm';

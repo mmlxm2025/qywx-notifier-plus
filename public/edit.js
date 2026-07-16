@@ -51,15 +51,28 @@ document.addEventListener('DOMContentLoaded', function () {
         saveBtn: document.getElementById('save-btn')
     };
 
+    // 成员列表请求代次守卫：防止慢速 refresh 覆盖保存/409 恢复后的 picker 选中态。
+    const membersGuard = H.createRequestGuard();
+
     checkAuth().then(isAuth => { if (isAuth) bootstrap(); });
+
+    function redirectToLogin() {
+        // 与 AppHttp.safeRedirectToLogin 契约一致：保留同源相对路径供 login ?next= 消费。
+        try {
+            const here = window.location.pathname + window.location.search + window.location.hash;
+            window.location.href = '/login?next=' + encodeURIComponent(here);
+        } catch (_e) {
+            window.location.href = '/login';
+        }
+    }
 
     async function checkAuth() {
         try {
             const res = await fetch('/api/auth-status', { credentials: 'same-origin' });
             const data = await res.json();
-            if (!data.loggedIn) { window.location.href = '/login'; return false; }
+            if (!data.loggedIn) { redirectToLogin(); return false; }
             return true;
-        } catch (_e) { window.location.href = '/login'; return false; }
+        } catch (_e) { redirectToLogin(); return false; }
     }
 
     function bootstrap() {
@@ -68,6 +81,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!appCode) {
             showError('缺少应用 code 参数');
             return;
+        }
+        // 总览「安全设置」链到 ?tab=security：滚动到安全分区。
+        if (new URLSearchParams(window.location.search).get('tab') === 'security') {
+            const sec = document.getElementById('security-section');
+            if (sec) setTimeout(() => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
         }
         els.saveBtn.addEventListener('click', onSave);
         els.refreshMembersBtn.addEventListener('click', () => loadMembers(true));
@@ -138,8 +156,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function loadMembers(refresh) {
+        const generation = membersGuard.next();
         const url = '/api/configuration/' + encodeURIComponent(appCode) + '/users' + (refresh ? '?refresh=1' : '');
         const res = await http.get(url);
+        // 过期响应一律丢弃，避免慢速 refresh 覆盖保存/409 后已 setValue 的 picker。
+        if (!membersGuard.isCurrent(generation)) return;
         if (!res.ok) {
             toast.show(res.error || '获取成员列表失败', { type: 'warn' });
             return;

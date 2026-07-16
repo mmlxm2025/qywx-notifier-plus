@@ -452,7 +452,7 @@ class Database {
         return this.allRaw(sql, []);
     }
 
-    // 更新配置
+    // 更新配置（编号匹配 ASCII 大小写不敏感，与 getConfigurationByCode 一致）
     async updateConfiguration(config) {
         const {
             code, corpid, encrypted_corpsecret, agentid, touser, description,
@@ -462,7 +462,7 @@ class Database {
             UPDATE configurations
             SET corpid = ?, encrypted_corpsecret = ?, agentid = ?, touser = ?, description = ?,
                 callback_token = ?, encrypted_callback_token = ?, encrypted_encoding_aes_key = ?, callback_enabled = ?
-            WHERE code = ?
+            WHERE lower(code) = lower(?)
         `;
         await this.runRaw(sql, [
             corpid, encrypted_corpsecret, agentid, touser, description,
@@ -530,11 +530,12 @@ class Database {
     // 仅用于身份判重（新建、完成、实际修改 AgentID 时）。历史重复项不自动合并。
     // excludeCode 为空时不过滤；只命中 isCompletedConfig 意义上的完成行，避免与草稿冲突误报。
     async findCompletedByCorpidAgentId(corpid, agentid, excludeCode = null) {
+        // excludeCode 大小写不敏感：避免 /APP-A 与 app-a 被当成不同应用而误报身份冲突。
         const sql = `
             SELECT * FROM configurations
             WHERE corpid = ? AND agentid = ?
               AND encrypted_corpsecret != '' AND encrypted_corpsecret IS NOT NULL
-              ${excludeCode ? 'AND code != ?' : ''}
+              ${excludeCode ? 'AND lower(code) != lower(?)' : ''}
             ORDER BY id DESC
             LIMIT 1
         `;
@@ -594,22 +595,28 @@ class Database {
     // 返回 { [configCode]: { rule_count, enabled_rule_count } }。
     async countRulesByConfigCodes(codes) {
         if (!codes || codes.length === 0) return {};
-        const placeholders = codes.map(() => '?').join(',');
+        // 大小写不敏感聚合：按 lower(config_code) 分组，再映射回调用方提供的权威 code。
+        const placeholders = codes.map(() => 'lower(?)').join(',');
         const sql = `
-            SELECT config_code,
+            SELECT lower(config_code) AS norm_code,
                    COUNT(*) AS rule_count,
                    SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled_rule_count
             FROM notification_rules
-            WHERE config_code IN (${placeholders})
-            GROUP BY config_code
+            WHERE lower(config_code) IN (${placeholders})
+            GROUP BY lower(config_code)
         `;
         const rows = await this.allRaw(sql, codes);
-        const map = {};
+        const byNorm = {};
         for (const r of rows) {
-            map[r.config_code] = {
+            byNorm[String(r.norm_code)] = {
                 rule_count: Number(r.rule_count) || 0,
                 enabled_rule_count: Number(r.enabled_rule_count) || 0
             };
+        }
+        const map = {};
+        for (const code of codes) {
+            const hit = byNorm[String(code).toLowerCase()];
+            if (hit) map[code] = hit;
         }
         return map;
     }
@@ -621,22 +628,23 @@ class Database {
             const sql = `
                 UPDATE configurations
                 SET encrypted_corpsecret = ?, agentid = ?, touser = ?, description = ?, notify_key_hash = ?, legacy_until = NULL
-                WHERE code = ?
+                WHERE lower(code) = lower(?)
             `;
             await this.runRaw(sql, [encrypted_corpsecret, agentid, touser, description, notify_key_hash, code]);
         } else {
             const sql = `
                 UPDATE configurations
                 SET encrypted_corpsecret = ?, agentid = ?, touser = ?, description = ?
-                WHERE code = ?
+                WHERE lower(code) = lower(?)
             `;
             await this.runRaw(sql, [encrypted_corpsecret, agentid, touser, description, code]);
         }
         return { code };
     }
 
+    // 规则归属应用：config_code 比较 ASCII 大小写不敏感（与 configurations.code 一致）。
     async listNotificationRules(configCode) {
-        const sql = `SELECT * FROM notification_rules WHERE config_code = ? ORDER BY id DESC`;
+        const sql = `SELECT * FROM notification_rules WHERE lower(config_code) = lower(?) ORDER BY id DESC`;
         return this.allRaw(sql, [configCode]);
     }
 
@@ -811,8 +819,9 @@ class Database {
     // 由 service 层翻译成 APP_NOT_FOUND / APP_VERSION_CONFLICT。
     async deleteConfigurationCascade(code, expectedVersion) {
         return this.withTransaction(async (tx) => {
+            // 先按大小写不敏感解析，后续写操作使用库内权威 code。
             const row = await tx.get(
-                'SELECT version FROM configurations WHERE code = ?',
+                'SELECT code, version FROM configurations WHERE lower(code) = lower(?)',
                 [code]
             );
             if (!row) {
@@ -820,6 +829,7 @@ class Database {
                 e.__deleteCause = 'missing';
                 throw e;
             }
+            const canonicalCode = row.code;
             const currentVersion = Number(row.version) || 1;
             if (Number(expectedVersion) !== currentVersion) {
                 const e = new Error('version mismatch');
@@ -827,14 +837,14 @@ class Database {
                 throw e;
             }
             const rules = await tx.all(
-                'SELECT id, api_code FROM notification_rules WHERE config_code = ?',
-                [code]
+                'SELECT id, api_code FROM notification_rules WHERE lower(config_code) = lower(?)',
+                [canonicalCode]
             );
             const rulesDeleted = (rules || []).length;
             // 规范 §6.5：删除应用前，把应用 Code 与全部规则编号登记为退役（cascade_deleted），
             // 避免遗留调用方误发到后续新建的对象。全部步骤在同一事务完成。
             await this.retireNotifyCode(tx, {
-                code, ownerType: 'configuration', ownerId: code, reason: 'cascade_deleted'
+                code: canonicalCode, ownerType: 'configuration', ownerId: canonicalCode, reason: 'cascade_deleted'
             });
             for (const r of rules || []) {
                 await this.retireNotifyCode(tx, {
@@ -844,10 +854,10 @@ class Database {
                     reason: 'cascade_deleted'
                 });
             }
-            await tx.run('DELETE FROM notification_rules WHERE config_code = ?', [code]);
+            await tx.run('DELETE FROM notification_rules WHERE lower(config_code) = lower(?)', [canonicalCode]);
             const configResult = await tx.run(
                 'DELETE FROM configurations WHERE code = ? AND version = ?',
-                [code, currentVersion]
+                [canonicalCode, currentVersion]
             );
             if (configResult.changes !== 1) {
                 // 版本在校验后到删除间被改动 → 触发回滚。
@@ -889,8 +899,9 @@ class Database {
                 }
                 configCode = ruleRow.config_code;
             }
+            // 应用 code 大小写不敏感解析，后续 CAS 使用库内权威 code。
             const app = await tx.get(
-                'SELECT code, version, encrypted_corpsecret, agentid, touser FROM configurations WHERE code = ?',
+                'SELECT code, version, encrypted_corpsecret, agentid, touser FROM configurations WHERE lower(code) = lower(?)',
                 [configCode]
             );
             if (!app) {
@@ -917,10 +928,10 @@ class Database {
             }
             // 执行规则变更。
             const ruleResult = await mutation(tx, app);
-            // 原子递增应用版本（CAS：code + version 双条件）。
+            // 原子递增应用版本（CAS：权威 code + version 双条件）。
             const bumpResult = await tx.run(
                 'UPDATE configurations SET version = version + 1 WHERE code = ? AND version = ?',
-                [configCode, currentVersion]
+                [app.code, currentVersion]
             );
             if (bumpResult.changes !== 1) {
                 // 版本在校验后到递增间被改动 → 触发回滚。
@@ -947,7 +958,7 @@ class Database {
     async completeConfigurationAtomic(code, fields, expectedVersion, { numericAgentid } = {}) {
         return this.withTransaction(async (tx) => {
             const row = await tx.get(
-                'SELECT code, corpid, encrypted_corpsecret, agentid, touser, version FROM configurations WHERE code = ?',
+                'SELECT code, corpid, encrypted_corpsecret, agentid, touser, version FROM configurations WHERE lower(code) = lower(?)',
                 [code]
             );
             if (!row) {
@@ -955,7 +966,9 @@ class Database {
                 e.__completeCause = 'missing';
                 throw e;
             }
-            // 草稿校验（与 isDraftConfig 一致）。
+            const canonicalCode = row.code;
+            // 完成态校验（与 isCompletedConfig 一致）：仅拒绝真正已完成行。
+            // 半完成配置（非三项全齐）仍允许完成，避免卡死。
             const hasSecret = typeof row.encrypted_corpsecret === 'string' && row.encrypted_corpsecret.length > 0;
             const agentOk = Number.isInteger(Number(row.agentid)) && Number(row.agentid) > 0;
             const touserOk = String(row.touser || '').split('|').filter(Boolean).length > 0;
@@ -971,14 +984,14 @@ class Database {
                 e.__currentVersion = currentVersion;
                 throw e;
             }
-            // 身份判重：同 (corpid, agentid) 的其他完成应用禁止再被覆盖。
+            // 身份判重：同 (corpid, agentid) 的其他完成应用禁止再被覆盖（排除自身时大小写不敏感）。
             const conflict = await tx.get(
                 `SELECT code FROM configurations
                  WHERE corpid = ? AND agentid = ?
                    AND encrypted_corpsecret != '' AND encrypted_corpsecret IS NOT NULL
-                   AND code != ?
+                   AND lower(code) != lower(?)
                  LIMIT 1`,
-                [row.corpid, numericAgentid, code]
+                [row.corpid, numericAgentid, canonicalCode]
             );
             if (conflict) {
                 const e = new Error('identity conflict');
@@ -986,7 +999,7 @@ class Database {
                 e.__existingCode = conflict.code;
                 throw e;
             }
-            // 按 code + version + 草稿条件更新，version + 1。
+            // 按权威 code + version 更新，version + 1。
             const sets = [];
             const params = [];
             for (const [col, val] of Object.entries(fields)) {
@@ -995,7 +1008,7 @@ class Database {
                 params.push(val);
             }
             sets.push('version = version + 1');
-            params.push(code, currentVersion);
+            params.push(canonicalCode, currentVersion);
             const sql = `UPDATE configurations SET ${sets.join(', ')} WHERE code = ? AND version = ?`;
             const result = await tx.run(sql, params);
             if (result.changes !== 1) {
@@ -1003,7 +1016,7 @@ class Database {
                 e.__completeCause = 'version_conflict';
                 throw e;
             }
-            return { code, version: currentVersion + 1 };
+            return { code: canonicalCode, version: currentVersion + 1 };
         });
     }
 
@@ -1026,7 +1039,7 @@ class Database {
         const { targetAgentid = null, checkIdentity = false } = opts;
         return this.withTransaction(async (tx) => {
             const row = await tx.get(
-                'SELECT code, corpid, agentid, version FROM configurations WHERE code = ?',
+                'SELECT code, corpid, agentid, version FROM configurations WHERE lower(code) = lower(?)',
                 [code]
             );
             if (!row) {
@@ -1034,6 +1047,7 @@ class Database {
                 e.__updateCause = 'missing';
                 throw e;
             }
+            const canonicalCode = row.code;
             const currentVersion = Number(row.version) || 1;
             if (Number(expectedVersion) !== currentVersion) {
                 const e = new Error('version conflict');
@@ -1047,9 +1061,9 @@ class Database {
                     `SELECT code FROM configurations
                      WHERE corpid = ? AND agentid = ?
                        AND encrypted_corpsecret != '' AND encrypted_corpsecret IS NOT NULL
-                       AND code != ?
+                       AND lower(code) != lower(?)
                      LIMIT 1`,
-                    [row.corpid, Number(targetAgentid), code]
+                    [row.corpid, Number(targetAgentid), canonicalCode]
                 );
                 if (conflict) {
                     const e = new Error('identity conflict');
@@ -1058,7 +1072,7 @@ class Database {
                     throw e;
                 }
             }
-            // 按 code + version 更新 touched fields，version + 1。
+            // 按权威 code + version 更新 touched fields，version + 1。
             const sets = [];
             const params = [];
             for (const [col, val] of Object.entries(fields)) {
@@ -1068,10 +1082,10 @@ class Database {
             }
             if (sets.length === 0) {
                 // 没有可更新列：幂等无操作，不增版本。
-                return { code, version: currentVersion };
+                return { code: canonicalCode, version: currentVersion };
             }
             sets.push('version = version + 1');
-            params.push(code, currentVersion);
+            params.push(canonicalCode, currentVersion);
             const sql = `UPDATE configurations SET ${sets.join(', ')} WHERE code = ? AND version = ?`;
             const result = await tx.run(sql, params);
             if (result.changes !== 1) {
@@ -1080,7 +1094,7 @@ class Database {
                 e.__currentVersion = currentVersion;
                 throw e;
             }
-            return { code, version: currentVersion + 1 };
+            return { code: canonicalCode, version: currentVersion + 1 };
         });
     }
 
@@ -1155,7 +1169,7 @@ class Database {
     async updateDraftCallbackAtomic(code, fields, expectedVersion) {
         return this.withTransaction(async (tx) => {
             const row = await tx.get(
-                'SELECT code, encrypted_corpsecret, agentid, touser, version FROM configurations WHERE code = ?',
+                'SELECT code, encrypted_corpsecret, agentid, touser, version FROM configurations WHERE lower(code) = lower(?)',
                 [code]
             );
             if (!row) {
@@ -1163,6 +1177,7 @@ class Database {
                 e.__draftCause = 'missing';
                 throw e;
             }
+            const canonicalCode = row.code;
             const hasSecret = typeof row.encrypted_corpsecret === 'string' && row.encrypted_corpsecret.length > 0;
             const agentOk = Number.isInteger(Number(row.agentid)) && Number(row.agentid) > 0;
             const touserOk = String(row.touser || '').split('|').filter(Boolean).length > 0;
@@ -1186,7 +1201,7 @@ class Database {
                 params.push(val);
             }
             sets.push('version = version + 1');
-            params.push(code, currentVersion);
+            params.push(canonicalCode, currentVersion);
             const sql = `UPDATE configurations SET ${sets.join(', ')} WHERE code = ? AND version = ?`;
             const result = await tx.run(sql, params);
             if (result.changes !== 1) {
@@ -1194,7 +1209,7 @@ class Database {
                 e.__draftCause = 'version_conflict';
                 throw e;
             }
-            return { code, version: currentVersion + 1 };
+            return { code: canonicalCode, version: currentVersion + 1 };
         });
     }
 

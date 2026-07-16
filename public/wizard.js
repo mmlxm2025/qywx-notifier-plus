@@ -51,9 +51,17 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const res = await fetch('/api/auth-status', { credentials: 'same-origin' });
             const data = await res.json();
-            if (!data.loggedIn) { window.location.href = '/login'; return false; }
+            if (!data.loggedIn) {
+                const here = window.location.pathname + window.location.search + window.location.hash;
+                window.location.href = '/login?next=' + encodeURIComponent(here);
+                return false;
+            }
             return true;
-        } catch (_e) { window.location.href = '/login'; return false; }
+        } catch (_e) {
+            const here = window.location.pathname + window.location.search + window.location.hash;
+            window.location.href = '/login?next=' + encodeURIComponent(here);
+            return false;
+        }
     }
 
     // ─── sessionStorage 白名单持久化 ──────────────────────────────────
@@ -137,6 +145,21 @@ document.addEventListener('DOMContentLoaded', function () {
         draft.corpid = cfg.corpid;
         els.callbackForm['corpid'].value = cfg.corpid;
         els.callbackForm['corpid'].readOnly = true;
+        // 恢复 sessionStorage 白名单非敏感字段（agentid/description/selectedUserIDs）。
+        // 密钥永不落存储；Token/AESKey/CorpSecret 需用户重新输入。
+        const saved = loadState();
+        if (saved && String(saved.draft_code || '') === String(code)) {
+            if (saved.agentid !== undefined && saved.agentid !== null && els.configForm) {
+                els.configForm['agentid'].value = saved.agentid;
+                cred.agentid = Number(saved.agentid) || null;
+            }
+            if (saved.description !== undefined && saved.description !== null && els.configForm) {
+                els.configForm['description'].value = saved.description;
+            }
+            if (Array.isArray(saved.selectedUserIDs)) {
+                selectedUsers = saved.selectedUserIDs.map(String);
+            }
+        }
         // 直接进入第 2 步（回调 Token/AESKey 需重新输入，但 CorpID 锁定）。
         goToStep(2);
         toast.show('已恢复草稿，请填写凭证', { type: 'info' });
@@ -152,6 +175,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function goToStep(n) {
+        // 离开成员步前同步 picker，防止 step3→2→再验证时 selectedUsers 仍是空数组。
+        if (picker && typeof picker.getValue === 'function') {
+            const latest = picker.getValue().touser;
+            if (Array.isArray(latest)) selectedUsers = latest;
+        }
         for (let i = 1; i <= 4; i++) {
             els.steps[i].classList.toggle('hidden', i !== n);
             els.indicators[i].classList.toggle('step-primary', i <= n);
@@ -280,6 +308,11 @@ document.addEventListener('DOMContentLoaded', function () {
         cred.agentid = agentid;
         cred.validated = true;
         availableUsers = res.data.users || [];
+        // 重新验证前若已有 picker，先同步选中，避免 step3→2→再验证时清空接收人。
+        if (picker && typeof picker.getValue === 'function') {
+            const latest = picker.getValue().touser;
+            if (Array.isArray(latest) && latest.length > 0) selectedUsers = latest;
+        }
         renderRecipientPicker();
         saveState();
         toast.show('凭证验证成功，请选择接收成员', { type: 'success' });
@@ -291,7 +324,7 @@ document.addEventListener('DOMContentLoaded', function () {
         picker = window.AppRecipientPicker.create(els.recipientMount, {
             mode: 'member',
             users: availableUsers,
-            current: selectedUsers
+            current: Array.isArray(selectedUsers) ? selectedUsers : []
         });
     }
 

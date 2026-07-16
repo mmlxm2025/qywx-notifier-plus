@@ -213,3 +213,107 @@ test('R-P1-05: complete 旧版本返回 409', async t => {
     assert.equal(err.statusCode, 409);
     assert.equal(err.businessCode, 'APP_VERSION_CONFLICT');
 });
+
+// ─── 半完成配置恢复路径（与 isDraftConfig 误用对齐） ────────────────────
+// isDraft 只匹配三项全缺；半完成配置（有 secret 但无 touser 等）既非草稿也非完成态。
+// 完成/草稿回调更新必须以 !isCompletedConfig 放行，否则会卡死为不可恢复状态：
+// can_edit=false、complete 被 APP_ALREADY_COMPLETED 拒绝、发送被 APP_NOT_COMPLETED 拒绝。
+
+test('半完成配置允许 completeConfiguration 恢复完成', async t => {
+    const { notifier } = setupNotifier(t, {
+        configs: {
+            'partial-1': draftConfig({
+                code: 'partial-1',
+                encrypted_corpsecret: 'enc-partial-secret',
+                agentid: 100001,
+                touser: '',
+                version: 2
+            })
+        }
+    });
+    assert.equal(notifier.isDraftConfig({
+        encrypted_corpsecret: 'enc-partial-secret', agentid: 100001, touser: ''
+    }), false);
+    assert.equal(notifier.isCompletedConfig({
+        encrypted_corpsecret: 'enc-partial-secret', agentid: 100001, touser: ''
+    }), false);
+
+    const result = await notifier.completeConfiguration({
+        code: 'partial-1',
+        corpsecret: 's',
+        agentid: 100001,
+        touser: 'alice',
+        version: 2
+    });
+    assert.equal(result.code, 'partial-1');
+    assert.equal(result.lifecycle_status, 'active');
+    assert.equal(result.version, 3);
+});
+
+test('已完成配置 completeConfiguration 仍返回 APP_ALREADY_COMPLETED', async t => {
+    const { notifier } = setupNotifier(t, {
+        configs: {
+            'done-1': draftConfig({
+                code: 'done-1',
+                encrypted_corpsecret: 'enc-secret',
+                agentid: 100001,
+                touser: 'alice',
+                version: 2
+            })
+        }
+    });
+    const err = await capture(() => notifier.completeConfiguration({
+        code: 'done-1', corpsecret: 's', agentid: 100001, touser: 'bob', version: 2
+    }));
+    assert.ok(err);
+    assert.equal(err.statusCode, 409);
+    assert.equal(err.businessCode, 'APP_ALREADY_COMPLETED');
+});
+
+test('半完成配置允许 createCallbackConfiguration 更新回调凭证', async t => {
+    const { notifier } = setupNotifier(t, {
+        configs: {
+            'partial-2': draftConfig({
+                code: 'partial-2',
+                encrypted_corpsecret: 'enc-partial',
+                agentid: 0,
+                touser: '',
+                version: 4
+            })
+        }
+    });
+    const result = await notifier.createCallbackConfiguration({
+        corpid: 'corp-1',
+        callback_token: 'tok',
+        encoding_aes_key: 'B'.repeat(43),
+        draft_code: 'partial-2',
+        version: 4
+    });
+    assert.equal(result.code, 'partial-2');
+    assert.equal(result.version, 5);
+    assert.equal(result.lifecycle_status, 'draft');
+});
+
+test('已完成配置 createCallbackConfiguration 更新返回 APP_ALREADY_COMPLETED', async t => {
+    const { notifier } = setupNotifier(t, {
+        configs: {
+            'done-2': draftConfig({
+                code: 'done-2',
+                encrypted_corpsecret: 'enc-secret',
+                agentid: 100001,
+                touser: 'alice',
+                version: 1
+            })
+        }
+    });
+    const err = await capture(() => notifier.createCallbackConfiguration({
+        corpid: 'corp-1',
+        callback_token: 'tok',
+        encoding_aes_key: 'C'.repeat(43),
+        draft_code: 'done-2',
+        version: 1
+    }));
+    assert.ok(err);
+    assert.equal(err.statusCode, 409);
+    assert.equal(err.businessCode, 'APP_ALREADY_COMPLETED');
+});

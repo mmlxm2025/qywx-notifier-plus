@@ -83,6 +83,14 @@ class LoginRateLimiter {
             this.failures.set(key, entries);
         }
         entries.push(now);
+        // 与 RateLimiter 一致：硬容量上限，防止唯一 username:IP 爆破撑爆内存。
+        if (this.failures.size > this.maxKeys) {
+            this.cleanup();
+            while (this.failures.size > this.maxKeys) {
+                const firstKey = this.failures.keys().next().value;
+                this.failures.delete(firstKey);
+            }
+        }
         return entries.length;
     }
 

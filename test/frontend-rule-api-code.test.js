@@ -208,3 +208,22 @@ test('10c. rules.js 动态值用 textContent（不拼接 innerHTML）', () => {
 test('10d. rules.js 复制按钮 fallback 用 encodeURIComponent', () => {
     assert.match(script, /encodeURIComponent\(rule\.api_code\)/, '复制 fallback 应编码路径段');
 });
+
+// ─── 改号确认失败保留模态 ───────────────────────────────────────────────
+
+test('改号确认 onConfirm 返回 submit() 结果（失败不关模态）', () => {
+    // 不得 hardcode return true；必须把 submit 的 boolean 回传给 modal。
+    assert.match(
+        script,
+        /onConfirm:\s*async\s*\(\)\s*=>\s*submit\s*\(\)/,
+        '改号确认应 return submit()，失败时 modal 保持打开'
+    );
+    assert.doesNotMatch(
+        script,
+        /onConfirm:\s*async\s*\(\)\s*=>\s*\{\s*await submit\(\);\s*return true;/,
+        '禁止改号确认无条件 return true'
+    );
+    // submit 在错误分支显式 return false
+    assert.match(script, /return false;/, 'submit 失败路径应 return false');
+    assert.match(script, /return true;/, 'submit 成功路径应 return true');
+});

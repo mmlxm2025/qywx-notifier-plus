@@ -292,6 +292,15 @@ test('SEC-006 LoginRateLimiter blocks after max failures and resets on success',
     assert.doesNotThrow(() => limiter.check('u:ip'));
 });
 
+test('SEC-006 LoginRateLimiter enforces maxKeys hard cap under unique username flood', () => {
+    const { LoginRateLimiter } = require('../src/core/rate-limit');
+    const limiter = new LoginRateLimiter({ baseWindowMs: 60000, maxAttempts: 10, maxKeys: 5 });
+    for (let i = 0; i < 40; i += 1) {
+        limiter.recordFailure(`user-${i}:1.2.3.4`);
+    }
+    assert.ok(limiter.failures.size <= 5, `maxKeys 应硬限制桶数量，实际 ${limiter.failures.size}`);
+});
+
 // ---------- SEC-002：Cookie 会话属性 ----------
 
 test('SEC-002 buildSessionCookie sets HttpOnly, SameSite, and Secure when requested', () => {

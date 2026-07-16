@@ -640,6 +640,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const writeCode = currentCode;
 
         // 实际提交逻辑：封装为函数，便于改号确认走 onConfirm 回调（与 regenerate/delete 一致）。
+        // 返回 true=成功可关模态；false=失败保留模态（冲突/校验错误）。
         const submit = async () => {
             let res;
             if (id) {
@@ -654,7 +655,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 // 若写发起时的应用已不是当前应用（用户切换到 B），不修改 B 的状态。
                 if (writeCode && currentCode !== writeCode) {
                     toast.show('应用已切换，规则写入已在原应用完成', { type: 'info' });
-                    return;
+                    return true;
                 }
                 // 采用服务端返回的 app_version，不本地 +1。
                 if (res.version) currentAppVersion = res.version;
@@ -667,14 +668,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 resetForm();
                 await loadRules();
-                return;
+                return true;
             }
             // 接收规则 API 自定义编号（规范 §9.6）：编号格式错误聚焦输入框；编号冲突保留表单。
             // 不按 res.error 中文文案判断，按 res.code 分支。
             if (res.code === 'RULE_API_CODE_INVALID') {
                 setApiCodeStatus('编号格式不合法（3～64 位小写字母/数字/-/_，首尾为字母或数字）', 'error');
                 ruleApiCodeInput.focus();
-                return;
+                return false;
             }
             if (res.code === 'RULE_API_CODE_CONFLICT') {
                 const scope = res.details && res.details.conflict_scope;
@@ -683,15 +684,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     : (scope === 'retired' ? '该编号已被保留，不能使用' : '该编号已占用或已被保留，请更换');
                 setApiCodeStatus(hint, 'error');
                 ruleApiCodeInput.focus();
-                return;
+                return false;
             }
             // 版本冲突：刷新列表后让用户重新确认（绑定原 code，避免跨应用恢复）。
-            if (await handleRuleWriteConflict(res, writeCode)) return;
+            if (await handleRuleWriteConflict(res, writeCode)) return false;
             setFormError(res.error || '保存失败');
+            return false;
         };
 
         // 接收规则 API 自定义编号（规范 §9.3）：编辑态修改编号前确认旧地址立即失效。
-        // 使用 onConfirm 回调（与 regenerate/delete 一致），不在 await boolean 模式下挂起表单提交。
+        // 使用 onConfirm 回调（与 regenerate/delete 一致），失败返回 false 保留模态。
         if (id && payload.api_code !== undefined) {
             const nextNormalized = String(payload.api_code).trim().toLowerCase();
             if (nextNormalized !== originalApiCode) {
@@ -700,10 +702,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     body: `修改 API 编号后，旧地址 /api/notify/${originalApiCode} 将立即失效。\n请确认调用方会改用 /api/notify/${nextNormalized}。`,
                     confirmText: '确认修改',
                     confirmType: 'warning',
-                    onConfirm: async () => {
-                        await submit();
-                        return true;
-                    }
+                    onConfirm: async () => submit()
                 });
                 return;
             }
@@ -941,12 +940,21 @@ document.addEventListener('DOMContentLoaded', function () {
     ruleForm.addEventListener('submit', saveRule);
 
     // 多应用（§6.8）：会话守卫。AppHttp 在 401 时已自动跳转登录，这里仅做首屏检查。
+    // 未登录时保留 ?code= 等路径到 login?next=，避免深链丢失。
     (async () => {
         try {
             const res = await fetch('/api/auth-status', { credentials: 'same-origin' });
             const data = await res.json();
-            if (!data.loggedIn) { window.location.href = '/login'; return; }
-        } catch (_e) { window.location.href = '/login'; return; }
+            if (!data.loggedIn) {
+                const here = window.location.pathname + window.location.search + window.location.hash;
+                window.location.href = '/login?next=' + encodeURIComponent(here);
+                return;
+            }
+        } catch (_e) {
+            const here = window.location.pathname + window.location.search + window.location.hash;
+            window.location.href = '/login?next=' + encodeURIComponent(here);
+            return;
+        }
         refreshIcons();
         await loadConfigurations();
     })();

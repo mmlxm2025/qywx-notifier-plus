@@ -403,11 +403,15 @@ function isDraftConfig(row) {
 //
 // 注意：本函数只覆盖应用级开关；配置 Code/规则级开关仍由 resolveNotifyAuth（路由层）负责，
 // 这里是防绕过的二次校验，确保内部直接调用 notifier.sendNotification 也受限。
+//
+// 完成态必须用 isCompletedConfig（secret + agentid + touser 全齐），不能用 isDraftConfig：
+// isDraft 只匹配「三项全缺」的纯草稿；半完成配置（仅有 secret、或 secret+agent 无 touser）
+// 既不是草稿也不是完成态，若只拦草稿会错误放行并调用企业微信（空接收人/非法 agentid）。
 function assertSendAllowed(config, rule) {
     if (!config) {
         throw createError('无效的code，未找到配置', 404, 'APP_NOT_FOUND');
     }
-    if (isDraftConfig(config)) {
+    if (!isCompletedConfig(config)) {
         throw createError('应用尚未完成配置', 409, 'APP_NOT_COMPLETED');
     }
     // 多应用（§4.4 三层发送开关）：与 HTTP resolveNotifyAuth 对齐，防止直接调用
@@ -533,6 +537,10 @@ function validateEncodingAesKey(value) {
     return typeof value === 'string' && AES_KEY_RE.test(value);
 }
 
+// 运行时缓存纪元：clear 时递增。异步 resolve 在 setCached 前比对 epoch，
+// 避免“读旧快照 → 写路径 clear → 旧结果 setCached”把过期接收人重新灌回缓存。
+let runtimeCacheEpoch = 0;
+
 function getCached(map, key) {
     const cached = map.get(key);
     if (!cached || cached.expires <= Date.now()) {
@@ -551,11 +559,20 @@ function setCached(map, key, value, ttlMs) {
     return value;
 }
 
+// 仅在 clear 未发生时写入缓存；epoch 已前进则返回 value 但不污染 Map。
+function setCachedIfCurrent(map, key, value, ttlMs, epoch) {
+    if (epoch !== runtimeCacheEpoch) return value;
+    return setCached(map, key, value, ttlMs);
+}
+
 function clearRuntimeCaches() {
+    runtimeCacheEpoch += 1;
     targetCache.clear();
     memberListCache.clear();
     sendResultCache.clear();
-    inflightSends.clear();
+    // 禁止 clear inflightSends：管理写路径 clear 时若抹掉 in-flight 合并键，
+    // 并发相同 payload 会再次 executeSend，导致企业微信重复发送（SEC-010 不变量）。
+    // in-flight Promise 自身在 finally 中 delete 键；配置变更后新请求会重新 resolve target。
 }
 
 function estimateRecipientCount(recipient, fallback = 1) {
@@ -816,8 +833,9 @@ async function createCallbackConfiguration(configInput) {
         if (existing.corpid !== corpid) {
             throw createError('草稿不属于该企业', 409, 'APP_DRAFT_MISMATCH');
         }
-        if (!isDraftConfig(existing)) {
+        if (isCompletedConfig(existing)) {
             // 已完成应用不得通过本接口再次写入回调凭证。
+            // 半完成配置（非 isDraft 但 isCompleted=false）仍允许更新，与 updateDraftCallbackAtomic 一致。
             throw createError('该应用已完成配置，不能再次写入', 409, 'APP_ALREADY_COMPLETED');
         }
         // 多应用（R-P1-05）：body version 三分——缺失/非法/合法。
@@ -910,8 +928,11 @@ async function completeConfiguration(configInput) {
     if (!callbackConfig) {
         throw createError('回调配置不存在，请先生成回调URL', 404, 'APP_NOT_FOUND');
     }
-    // 多应用不变量 6：completeConfiguration 只能完成草稿。
-    if (!isDraftConfig(callbackConfig)) {
+    // 多应用不变量 6：completeConfiguration 只能完成未完成应用（纯草稿或半完成）。
+    // 必须用 isCompletedConfig：isDraftConfig 只匹配三项全缺，半完成配置会被误判为
+    // APP_ALREADY_COMPLETED，与 DAO completeConfigurationAtomic（仅拦真正完成态）不一致，
+    // 导致半完成应用既不能发送也不能完成，永久卡死。
+    if (isCompletedConfig(callbackConfig)) {
         throw createError('该应用已完成配置，不能再次完成', 409, 'APP_ALREADY_COMPLETED', {
             existing_code: code
         });
@@ -1035,6 +1056,14 @@ async function createConfiguration(configInput) {
         encrypted_encoding_aes_key = cryptoSvc.encrypt(encoding_aes_key);
     }
 
+    // 与 completeConfiguration / 编辑改凭证一致：落库前在线校验 CorpID+Secret+AgentID，
+    // 避免兼容入口 /api/configure 写入无效凭证并占用 (corpid, agentid) 身份位。
+    await validateApplicationCredentials({
+        corpid,
+        corpsecret,
+        agentid: numericAgentid
+    });
+
     const formattedTouser = touserList.join('|');
 
     // 多应用（P0-05 §3.4）：身份判重必须按 (corpid, agentid)。
@@ -1108,10 +1137,11 @@ async function listRules(configCode) {
         throw createError('未找到配置', 404, 'APP_NOT_FOUND');
     }
 
-    const rules = await db.listNotificationRules(configCode);
+    // 使用库内权威 code 列规则（大小写与写入时一致）；DAO 本身也 lower() 匹配。
+    const rules = await db.listNotificationRules(config.code);
     // 多应用（§4.5 单一事实来源 + P1-03）：config 摘要复用统一序列化，
     // warnings（含 duplicate_identity）与总览/详情一致；规则页据此显示状态横幅。
-    const duplicateMap = await computeDuplicateMapForCodes([configCode]);
+    const duplicateMap = await computeDuplicateMapForCodes([config.code]);
     const summary = serializeConfigurationSummary(config, {
         ruleCounts: { [config.code]: { rule_count: rules.length, enabled_rule_count: rules.filter(r => r.enabled === 1 || r.enabled === true).length } },
         duplicateMap
@@ -1248,7 +1278,7 @@ async function changeRuleApiCodeInTransaction(tx, app, existingRule, nextApiCode
     });
     // 更新规则 api_code。
     const upd = await tx.run(
-        'UPDATE notification_rules SET api_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND config_code = ?',
+        'UPDATE notification_rules SET api_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND lower(config_code) = lower(?)',
         [nextApiCode, ruleId, app.code]
     );
     if (upd.changes !== 1) {
@@ -1281,7 +1311,7 @@ async function createRule(configCode, payload, options = {}) {
             result = await db.mutateRuleWithAppVersion(
                 { configCode },
                 expectedVersion,
-                async (tx) => {
+                async (tx, app) => {
                     // 创建不允许借用旧规则 ID（reclaimable），故 ruleId=null。
                     const conflict = await db.inspectNotifyCodeConflict(tx, api_code, { ruleId: null });
                     if (conflict) {
@@ -1291,11 +1321,12 @@ async function createRule(configCode, payload, options = {}) {
                         e.__conflictScope = conflict.scope;
                         throw e;
                     }
+                    // 写入库内权威 code（大小写），避免请求路径混大小写导致规则归属漂移。
                     const insert = await tx.run(
                         `INSERT INTO notification_rules (
                             config_code, api_code, name, touser, toparty, totag, is_all, estimated_count
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [configCode, api_code, normalized.name, normalized.touser, normalized.toparty,
+                        [app.code, api_code, normalized.name, normalized.touser, normalized.toparty,
                          normalized.totag, normalized.is_all || 0, normalized.estimated_count || 1]
                     );
                     return { id: insert.lastID, api_code };
@@ -1363,7 +1394,7 @@ async function updateRule(id, payload, options = {}) {
             async (tx, app) => {
                 // 事务内读取现有规则，用于 normalizeRulePayload 继承未变更字段。
                 const existing = await tx.get(
-                    'SELECT * FROM notification_rules WHERE id = ? AND config_code = ?',
+                    'SELECT * FROM notification_rules WHERE id = ? AND lower(config_code) = lower(?)',
                     [numericId, app.code]
                 );
                 if (!existing) {
@@ -1389,7 +1420,7 @@ async function updateRule(id, payload, options = {}) {
                     `UPDATE notification_rules
                      SET name = ?, touser = ?, toparty = ?, totag = ?,
                          is_all = ?, estimated_count = ?, updated_at = CURRENT_TIMESTAMP
-                     WHERE id = ? AND config_code = ?`,
+                     WHERE id = ? AND lower(config_code) = lower(?)`,
                     [normalized.name, normalized.touser, normalized.toparty, normalized.totag,
                      normalized.is_all || 0, normalized.estimated_count || 1, numericId, app.code]
                 );
@@ -1422,9 +1453,12 @@ async function regenerateRuleApiCode(id, options = {}) {
     const numericId = Number(id);
     // 规范 §7.6：复用统一改号逻辑（changeRuleApiCodeInTransaction），reason='regenerated'。
     // 随机碰撞最多重试 5 次（规范 §4.2）。
+    // 仅编号碰撞可重试；app_missing / app_not_completed / version_conflict / rule_missing
+    // 必须立即翻译返回，不得吞成 RULE_API_CODE_GENERATION_FAILED。
     const MAX_CODE_GEN_RETRY = 5;
     let result;
     let finalApiCode = null;
+    let lastCollision = null;
     for (let attempt = 0; attempt < MAX_CODE_GEN_RETRY; attempt++) {
         const candidateCode = notifyCode.generateNotifyCode();
         try {
@@ -1433,7 +1467,7 @@ async function regenerateRuleApiCode(id, options = {}) {
                 expectedVersion,
                 async (tx, app) => {
                     const existing = await tx.get(
-                        'SELECT id, api_code FROM notification_rules WHERE id = ? AND config_code = ?',
+                        'SELECT id, api_code FROM notification_rules WHERE id = ? AND lower(config_code) = lower(?)',
                         [numericId, app.code]
                     );
                     if (!existing) {
@@ -1446,21 +1480,31 @@ async function regenerateRuleApiCode(id, options = {}) {
                 }
             );
         } catch (err) {
-            // 版本冲突：不重试（交给前端刷新）。
-            if (err && err.__ruleCause === 'version_conflict') {
+            const cause = err && err.__ruleCause;
+            // 稳定业务失败：立即翻译，不重试。
+            if (cause === 'version_conflict' || cause === 'rule_missing'
+                || cause === 'app_missing' || cause === 'app_not_completed') {
                 throw translateRuleCause(err);
             }
-            // 规则不存在：不重试。
-            if (err && err.__ruleCause === 'rule_missing') {
-                throw translateRuleCause(err);
+            // 编号碰撞（随机 UUID 概率极低）或唯一约束/触发器冲突：重试。
+            const msg = String(err && err.message || '');
+            if (cause === 'notify_code_conflict'
+                || msg.includes('UNIQUE')
+                || msg.includes('NOTIFY_CODE_CONFLICT')
+                || (err && err.code === 'SQLITE_CONSTRAINT')) {
+                lastCollision = err;
+                continue;
             }
-            // 编号碰撞（随机 UUID 概率极低）或触发器/唯一约束冲突：重试。
-            continue;
+            // 其它未知错误：原样翻译，禁止掩成 503 生成失败。
+            throw translateRuleCause(err);
         }
         finalApiCode = candidateCode;
         break;
     }
     if (!result) {
+        if (lastCollision && lastCollision.__ruleCause === 'notify_code_conflict') {
+            throw translateRuleCause(lastCollision);
+        }
         throw createError('编号自动生成连续失败，请稍后重试', 503, 'RULE_API_CODE_GENERATION_FAILED');
     }
     clearRuntimeCaches();
@@ -1486,7 +1530,7 @@ async function deleteRule(id, options = {}) {
             expectedVersion,
             async (tx, app) => {
                 const existing = await tx.get(
-                    'SELECT api_code FROM notification_rules WHERE id = ? AND config_code = ?',
+                    'SELECT api_code FROM notification_rules WHERE id = ? AND lower(config_code) = lower(?)',
                     [numericId, app.code]
                 );
                 if (!existing) {
@@ -1503,7 +1547,7 @@ async function deleteRule(id, options = {}) {
                     reason: 'deleted'
                 });
                 const del = await tx.run(
-                    'DELETE FROM notification_rules WHERE id = ? AND config_code = ?',
+                    'DELETE FROM notification_rules WHERE id = ? AND lower(config_code) = lower(?)',
                     [numericId, app.code]
                 );
                 if (del.changes !== 1) {
@@ -1542,7 +1586,7 @@ async function setRuleEnabled(id, enabled, options = {}) {
             expectedVersion,
             async (tx, app) => {
                 const existing = await tx.get(
-                    'SELECT id FROM notification_rules WHERE id = ? AND config_code = ?',
+                    'SELECT id FROM notification_rules WHERE id = ? AND lower(config_code) = lower(?)',
                     [numericId, app.code]
                 );
                 if (!existing) {
@@ -1551,7 +1595,7 @@ async function setRuleEnabled(id, enabled, options = {}) {
                     throw e;
                 }
                 const upd = await tx.run(
-                    'UPDATE notification_rules SET enabled = ? WHERE id = ? AND config_code = ?',
+                    'UPDATE notification_rules SET enabled = ? WHERE id = ? AND lower(config_code) = lower(?)',
                     [value, numericId, app.code]
                 );
                 if (upd.changes !== 1) {
@@ -1572,6 +1616,9 @@ async function setRuleEnabled(id, enabled, options = {}) {
 async function resolveNotificationTarget(code) {
     const cached = getCached(targetCache, code);
     if (cached) return cached;
+
+    // 在任何 await 之前捕获纪元，避免 clear 后把旧 DB 快照重新写入缓存。
+    const epoch = runtimeCacheEpoch;
 
     // 规范 §7.7：解析逻辑只实现一次。规则优先，但若遗留数据导致同一编号同时命中
     // 规则与配置，必须拒绝发送（不能再依赖“规则优先”静默劫持），抛 500 命名空间损坏。
@@ -1604,7 +1651,7 @@ async function resolveNotificationTarget(code) {
             estimatedCount: estimateRecipientCount(recipient, rule.estimated_count),
             cacheScope: `rule:${rule.id}:${rule.api_code}`
         };
-        return setCached(targetCache, code, target, CONFIG_CACHE_TTL_MS);
+        return setCachedIfCurrent(targetCache, code, target, CONFIG_CACHE_TTL_MS, epoch);
     }
 
     const config = await db.getConfigurationByCode(code);
@@ -1622,7 +1669,7 @@ async function resolveNotificationTarget(code) {
         estimatedCount: estimateRecipientCount(recipient),
         cacheScope: `config:${config.code}`
     };
-    return setCached(targetCache, code, target, CONFIG_CACHE_TTL_MS);
+    return setCachedIfCurrent(targetCache, code, target, CONFIG_CACHE_TTL_MS, epoch);
 }
 
 // 接收规则 API 自定义编号（规范 §7.8）：可用性预检。
@@ -1762,7 +1809,6 @@ async function executeSend(target, title, content, sendOptions, cacheKey, force)
         throw limitErr;
     }
 
-    const cryptoSvc = getCrypto();
     let corpsecret;
     try {
         corpsecret = decryptWithLazyMigration('encrypted_corpsecret', config.encrypted_corpsecret, config.code);
@@ -1771,25 +1817,22 @@ async function executeSend(target, title, content, sendOptions, cacheKey, force)
         throw createError('配置密钥解密失败，请检查 ENCRYPTION_KEY', 500);
     }
 
-    let accessToken;
-    try {
-        accessToken = await wechat.getToken(config.corpid, corpsecret);
-    } catch (err) {
-        rollbackReservation(config, target, memberReservation);
-        throw err;
-    }
-
     let result;
     try {
-        result = await dispatchMessage(wechat, accessToken, config.agentid, target.recipient, title, content, sendOptions);
+        // SEC-008：发送与成员读取一致，access_token 失效时清缓存并仅重试一次。
+        result = await wechat.withTokenRetry(config.corpid, corpsecret, async (accessToken) => {
+            return dispatchMessage(wechat, accessToken, config.agentid, target.recipient, title, content, sendOptions);
+        });
     } catch (err) {
         // SEC-010 / REV-006：网络/调用失败按 receipt 精确回滚额度，避免幽灵额度。
         rollbackReservation(config, target, memberReservation);
         if ((err.message || '').includes('45009')) {
             enterBackoff(config);
-            err.statusCode = 429;
+            const rateErr = createError(err.message || '企业微信频率限制', 429);
+            throw rateErr;
         }
-        throw err;
+        // 凭证/上游错误归一化为稳定业务码，避免裸 Error 变成 500 INTERNAL_ERROR。
+        throw wrapWeChatError(err);
     }
 
     setCached(sendResultCache, cacheKey, result, SEND_DEDUP_TTL_MS);
@@ -1851,6 +1894,7 @@ async function getConfigMembers(code, options = {}) {
     }
 
     const cacheKey = `${config.corpid}:${config.agentid}`;
+    const memberEpoch = runtimeCacheEpoch;
     let memberData = options.refresh ? null : getCached(memberListCache, cacheKey);
     if (Array.isArray(memberData)) {
         memberData = { users: memberData, warning: '' };
@@ -1873,7 +1917,7 @@ async function getConfigMembers(code, options = {}) {
                 warning: '企业微信未授权读取通讯录，已仅显示当前配置中的 UserID。'
             };
         }
-        setCached(memberListCache, cacheKey, memberData, MEMBER_CACHE_TTL_MS);
+        setCachedIfCurrent(memberListCache, cacheKey, memberData, MEMBER_CACHE_TTL_MS, memberEpoch);
     }
 
     const users = Array.isArray(memberData.users) ? memberData.users : [];
@@ -2463,5 +2507,16 @@ module.exports = {
     isDraftConfig,
     // 接收规则 API 自定义编号（2026-07-04）：
     checkNotifyCodeAvailability,
-    _internal: { db, wechat, config: config.raw, CALLBACK_MAX_BODY_BYTES, notifyAuth }
+    _internal: {
+        db,
+        wechat,
+        config: config.raw,
+        CALLBACK_MAX_BODY_BYTES,
+        notifyAuth,
+        // 测试/诊断用：缓存清除与纪元（生产路由不依赖）。
+        clearRuntimeCaches,
+        get runtimeCacheEpoch() { return runtimeCacheEpoch; },
+        targetCache,
+        inflightSends
+    }
 };

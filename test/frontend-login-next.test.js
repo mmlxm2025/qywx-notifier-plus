@@ -14,6 +14,10 @@ const test = require('node:test');
 
 const httpSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'http.js'), 'utf8');
 const loginSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'login.js'), 'utf8');
+const editSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'edit.js'), 'utf8');
+const scriptSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'script.js'), 'utf8');
+const rulesSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'rules.js'), 'utf8');
+const wizardSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'wizard.js'), 'utf8');
 
 // 与当前 http.js safeRedirectToLogin 同语义：相对路径 next。
 function produceNext(location) {
@@ -108,4 +112,44 @@ test('P1-02: login.js 兼容旧书签中的同源绝对 URL', () => {
     // 源码应包含同源降级逻辑。
     assert.ok(/url\.origin\s*===\s*window\.location\.origin/.test(loginSrc),
         'login.js 应对同源绝对 URL 降级为相对路径');
+});
+
+test('P1-02: 首屏 checkAuth 也写入 login?next=（edit/rules/wizard/index）', () => {
+    for (const [name, src] of [
+        ['edit.js', editSrc],
+        ['script.js', scriptSrc],
+        ['rules.js', rulesSrc],
+        ['wizard.js', wizardSrc]
+    ]) {
+        assert.ok(
+            /\/login\?next=/.test(src),
+            `${name} 首屏未登录跳转应保留 ?next= 深链`
+        );
+        // 禁止仅写死 '/login' 而无 next 的主路径（允许 catch 降级到 /login）。
+        assert.ok(
+            !/location\.href\s*=\s*['"]\/login['"]\s*;\s*return/.test(src)
+                || /login\?next=/.test(src),
+            `${name} 不得在无 next 时硬跳 /login 作为唯一路径`
+        );
+    }
+});
+
+test('编辑页成员加载使用 createRequestGuard 丢弃过期响应', () => {
+    assert.ok(/membersGuard\s*=\s*H\.createRequestGuard\(\)/.test(editSrc), 'edit.js 应创建 membersGuard');
+    assert.ok(/membersGuard\.next\(\)/.test(editSrc), 'loadMembers 应推进代次');
+    assert.ok(/membersGuard\.isCurrent\(/.test(editSrc), 'loadMembers 应校验代次');
+});
+
+test('总览删除：规则预览失败时中止，不得当作 0 条规则', () => {
+    assert.ok(/!rulesRes\.ok/.test(scriptSrc) || /rulesRes\.ok\s*===?\s*false/.test(scriptSrc),
+        'onDelete 应检查 rulesRes.ok');
+    assert.ok(/删除已取消|无法加载规则/.test(scriptSrc),
+        '预览失败应提示并取消删除');
+});
+
+test('向导恢复草稿读取 sessionStorage 白名单字段', () => {
+    assert.ok(/selectedUserIDs/.test(wizardSrc), '应恢复 selectedUserIDs');
+    assert.ok(/loadState\(\)/.test(wizardSrc), 'tryRestoreDraft 应读 loadState');
+    // re-validate 前从 picker 同步选中
+    assert.ok(/picker\.getValue/.test(wizardSrc), '应能从 picker 同步选中成员');
 });
